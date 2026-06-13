@@ -3944,12 +3944,12 @@ function applyProdeState(s) {
     guardarStorage('prode26_real', resultadosReal);
   }
   if (s.passwords) {
-    // Merge: la contraseña de la nube prevalece sobre la local (para bloquear re-registro)
-    // Si la nube tiene una contraseña para un jugador, esa es la oficial.
+    // Merge: la contraseña de la nube prevalece sobre la local SOLO si el local ya tiene una.
+    // Si el local no tiene contraseña (primera vez), se respeta para que el usuario pueda crearla.
     const passMerged = { ...passwords }; // empezar con las locales
     Object.keys(s.passwords).forEach(uid => {
-      // Si la nube tiene contraseña para este jugador, la nube gana siempre
-      passMerged[uid] = s.passwords[uid];
+      // La nube gana solo si ya hay una contraseña local (evita bloquear el primer registro)
+      if (s.passwords[uid] && passwords[uid]) passMerged[uid] = s.passwords[uid];
     });
     passwords = passMerged;
     guardarStorage('prode26_pass', passwords);
@@ -5130,10 +5130,11 @@ function renderLedBanner() {
       let needsUpload = false;
 
       // Merge bidireccional:
-      // - Si la nube tiene contraseña para un jugador → la nube prevalece
+      // - Si la nube tiene contraseña para un jugador Y el local también la tiene → la nube prevalece
+      // - Si el local NO tiene contraseña (primera vez), la nube NO la sobreescribe (el usuario debe poder crearla)
       // - Si local tiene contraseña y la nube NO la tiene → conservar local y subir
       Object.keys(cloudPass).forEach(uid => {
-        if (cloudPass[uid]) passwords[uid] = cloudPass[uid];
+        if (cloudPass[uid] && passwords[uid]) passwords[uid] = cloudPass[uid];
       });
       // Detectar si hay contraseñas locales que la nube no tiene
       Object.keys(passwords).forEach(uid => {
