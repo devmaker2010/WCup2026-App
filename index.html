@@ -3815,7 +3815,21 @@ async function autoSyncPartidos(forzar = false) {
   renderGrupos();
 
   // Agrupar partidos por fecha y hacer fetch correcto por día
-  const fechas = [...new Set(partidosParaSync.map(p => p.dt.split('T')[0]))];
+  // Para partidos de madrugada AR (00:00-05:59), ESPN los indexa en la fecha local del venue
+  // (noche anterior en América), así que también buscamos la fecha anterior.
+  function fechaAnterior(fechaStr) {
+    const d = new Date(fechaStr + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().split('T')[0];
+  }
+  const todasFechas = new Set();
+  partidosParaSync.forEach(p => {
+    const fechaAR = p.dt.split('T')[0];
+    const horaAR  = parseInt(p.dt.split('T')[1].split(':')[0], 10);
+    todasFechas.add(fechaAR);
+    if (horaAR < 6) todasFechas.add(fechaAnterior(fechaAR)); // madrugada AR = noche anterior en América
+  });
+  const fechas = [...todasFechas];
   const fetchPorFecha = {};
   await Promise.all(fechas.map(async fecha => {
     const [espnEvs, tsdbEvs, proxyEvs, intlEvs] = await Promise.allSettled([
@@ -3837,8 +3851,15 @@ async function autoSyncPartidos(forzar = false) {
     const cfg = SYNC_CONFIG[p.id];
     if (!cfg) { syncStatus[p.id] = 'error'; continue; }
 
-    const fecha = p.dt.split('T')[0];
-    const { espn, tsdb, proxy, intl } = fetchPorFecha[fecha] || { espn:[], tsdb:[], proxy:[], intl:[] };
+    const fechaAR = p.dt.split('T')[0];
+    const horaAR  = parseInt(p.dt.split('T')[1].split(':')[0], 10);
+    // Para partidos de madrugada AR, combinar eventos de la fecha AR y la fecha anterior
+    const base  = fetchPorFecha[fechaAR]  || { espn:[], tsdb:[], proxy:[], intl:[] };
+    const extra = (horaAR < 6) ? (fetchPorFecha[fechaAnterior(fechaAR)] || { espn:[], tsdb:[], proxy:[], intl:[] }) : { espn:[], tsdb:[], proxy:[], intl:[] };
+    const espn  = [...base.espn,  ...extra.espn];
+    const tsdb  = [...base.tsdb,  ...extra.tsdb];
+    const proxy = [...base.proxy, ...extra.proxy];
+    const intl  = [...base.intl,  ...extra.intl];
 
     // Combinar todos los eventos de todas las fuentes ESPN para buscar
     const todosESPN = [...espn, ...proxy, ...intl].filter((ev, i, arr) => {
@@ -3944,12 +3965,12 @@ function applyProdeState(s) {
     guardarStorage('prode26_real', resultadosReal);
   }
   if (s.passwords) {
-    // Merge: la contraseña de la nube prevalece sobre la local SOLO si el local ya tiene una.
-    // Si el local no tiene contraseña (primera vez), se respeta para que el usuario pueda crearla.
+    // Merge: la contraseña de la nube prevalece sobre la local (para bloquear re-registro)
+    // Si la nube tiene una contraseña para un jugador, esa es la oficial.
     const passMerged = { ...passwords }; // empezar con las locales
     Object.keys(s.passwords).forEach(uid => {
-      // La nube gana solo si ya hay una contraseña local (evita bloquear el primer registro)
-      if (s.passwords[uid] && passwords[uid]) passMerged[uid] = s.passwords[uid];
+      // Si la nube tiene contraseña para este jugador, la nube gana siempre
+      passMerged[uid] = s.passwords[uid];
     });
     passwords = passMerged;
     guardarStorage('prode26_pass', passwords);
@@ -5130,11 +5151,10 @@ function renderLedBanner() {
       let needsUpload = false;
 
       // Merge bidireccional:
-      // - Si la nube tiene contraseña para un jugador Y el local también la tiene → la nube prevalece
-      // - Si el local NO tiene contraseña (primera vez), la nube NO la sobreescribe (el usuario debe poder crearla)
+      // - Si la nube tiene contraseña para un jugador → la nube prevalece
       // - Si local tiene contraseña y la nube NO la tiene → conservar local y subir
       Object.keys(cloudPass).forEach(uid => {
-        if (cloudPass[uid] && passwords[uid]) passwords[uid] = cloudPass[uid];
+        if (cloudPass[uid]) passwords[uid] = cloudPass[uid];
       });
       // Detectar si hay contraseñas locales que la nube no tiene
       Object.keys(passwords).forEach(uid => {
