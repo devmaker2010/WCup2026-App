@@ -3716,28 +3716,41 @@ async function syncResultadoGoogle(partido) {
   syncStatus[partido.id] = 'syncing';
   renderGrupos();
 
-  // Usar la fecha real del partido (no "hoy"), para que funcione con partidos de ayer
-  const fecha = partido.dt.split('T')[0];
+  const fechaAR = partido.dt.split('T')[0];
+  const horaAR  = parseInt(partido.dt.split('T')[1].split(':')[0], 10);
+  function _fant(f) { const d = new Date(f+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().split('T')[0]; }
+  const fechaExtra = horaAR < 6 ? _fant(fechaAR) : null;
 
   try {
-    const [espnEvs, tsdbEvs, espnProxyEvs, intlEvs] = await Promise.allSettled([
-      fetchESPN_friendly(fecha),
-      fetchTSDB_hoy(fecha),
-      fetchESPN_proxy(cfg.espnLeague, fecha),
-      fetchESPN_intl(fecha),
-    ]);
-    const espn  = espnEvs.status  === 'fulfilled' ? espnEvs.value  : [];
-    const tsdb  = tsdbEvs.status  === 'fulfilled' ? tsdbEvs.value  : [];
-    const proxy = espnProxyEvs.status === 'fulfilled' ? espnProxyEvs.value : [];
-    const intl  = intlEvs.status  === 'fulfilled' ? intlEvs.value  : [];
+    const fetches = [
+      fetchESPN_mundial(fechaAR),
+      fetchTSDB_hoy(fechaAR),
+      fetchESPN_proxy(cfg.espnLeague, fechaAR),
+      fetchESPN_intl(fechaAR),
+    ];
+    if (fechaExtra) {
+      fetches.push(fetchESPN_mundial(fechaExtra));
+      fetches.push(fetchTSDB_hoy(fechaExtra));
+      fetches.push(fetchESPN_proxy(cfg.espnLeague, fechaExtra));
+      fetches.push(fetchESPN_intl(fechaExtra));
+    }
+    const results = await Promise.allSettled(fetches);
+    const espn   = results[0]?.status === 'fulfilled' ? results[0].value : [];
+    const tsdb   = results[1]?.status === 'fulfilled' ? results[1].value : [];
+    const proxy  = results[2]?.status === 'fulfilled' ? results[2].value : [];
+    const intl   = results[3]?.status === 'fulfilled' ? results[3].value : [];
+    const espn2  = fechaExtra && results[4]?.status === 'fulfilled' ? results[4].value : [];
+    const tsdb2  = fechaExtra && results[5]?.status === 'fulfilled' ? results[5].value : [];
+    const proxy2 = fechaExtra && results[6]?.status === 'fulfilled' ? results[6].value : [];
+    const intl2  = fechaExtra && results[7]?.status === 'fulfilled' ? results[7].value : [];
 
-    const todosESPN = [...espn, ...proxy, ...intl].filter((ev, i, arr) => {
+    const todosESPN = [...espn, ...espn2, ...proxy, ...proxy2, ...intl, ...intl2].filter((ev, i, arr) => {
       const id = ev.id || ev.uid;
       return !id || arr.findIndex(e => (e.id || e.uid) === id) === i;
     });
 
     const resESPN = extraerResultadoESPN(todosESPN, cfg);
-    const resTSDB = extraerResultadoTSDB(tsdb, cfg);
+    const resTSDB = extraerResultadoTSDB([...tsdb, ...tsdb2], cfg);
 
     let res = null;
     if (resESPN && !resESPN.live) res = resESPN;
