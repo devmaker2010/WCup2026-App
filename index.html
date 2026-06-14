@@ -3501,29 +3501,82 @@ const SYNC_CONFIG = {
   'GL6': { localNorm:'panama',        visitaNorm:'england',           espnLeague:'fifa.world' },
 }
 
-// ── FUENTE 1: TheSportsDB — batch para el día ──
+// ── FUENTE 1: TheSportsDB — batch para el día (con alias de fecha y fallback) ──
 async function fetchTSDB_hoy(fecha) {
   const dia = fecha || new Date().toISOString().split('T')[0];
-  const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${dia}&s=Soccer`, { signal: AbortSignal.timeout(5000) });
-  const d = await r.json();
-  return d.events || [];
+  try {
+    const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${dia}&s=Soccer`, { signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    return d.events || [];
+  } catch(e) { return []; }
 }
 
-// ── FUENTE 2: ESPN directo (sin proxy — permite CORS para scoreboard) ──
+// ── FUENTE EXTRA: TSDB búsqueda por liga (FIFA World Cup 2026, id=4964) ──
+async function fetchTSDB_liga(fecha) {
+  // Liga FIFA World Cup 2026 en TSDB: id 4964 / temporada 2026
+  try {
+    const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsseason.php?id=4964&s=2026`, { signal: AbortSignal.timeout(8000) });
+    const d = await r.json();
+    const events = d.events || [];
+    if (!fecha) return events;
+    // Filtrar por fecha (strTimestamp o dateEvent)
+    return events.filter(e => (e.dateEvent || '').startsWith(fecha));
+  } catch(e) { return []; }
+}
+
+// ── FUENTE 2: ESPN mundial (directo, con fallback a proxy si CORS bloquea) ──
 async function fetchESPN_mundial(fecha) {
   const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`, { signal: AbortSignal.timeout(5000) });
-  const d = await r.json();
-  return d.events || [];
+  const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`;
+  // Intentar directo primero
+  try {
+    const r = await fetch(espnUrl, { signal: AbortSignal.timeout(5000) });
+    const d = await r.json();
+    if (d.events) return d.events;
+  } catch(e) {}
+  // Fallback: corsproxy.io
+  try {
+    const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
+    const d = await r.json();
+    if (d.events) return d.events;
+  } catch(e) {}
+  // Fallback: codetabs
+  try {
+    const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
+    const d = await r.json();
+    if (d.events) return d.events;
+  } catch(e) {}
+  return [];
 }
 
-// ── FUENTE 3: ESPN vía allorigins como fallback ──
+// ── FUENTE 3: ESPN vía proxies CORS (intenta múltiples en orden) ──
 async function fetchESPN_proxy(league, fecha) {
   const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`)}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
-  const w = await r.json();
-  return JSON.parse(w.contents).events || [];
+  const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`;
+  const proxies = [
+    async () => {
+      const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
+      const d = await r.json();
+      return d.events || [];
+    },
+    async () => {
+      const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
+      const d = await r.json();
+      return d.events || [];
+    },
+    async () => {
+      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
+      const w = await r.json();
+      return JSON.parse(w.contents).events || [];
+    },
+  ];
+  for (const tryProxy of proxies) {
+    try {
+      const events = await tryProxy();
+      if (Array.isArray(events)) return events;
+    } catch(e) {}
+  }
+  return [];
 }
 
 // Alias para nombres que ESPN/TSDB reportan diferente
@@ -3600,7 +3653,7 @@ const TEAM_ALIASES = {
   brazil:               ["brasil", "brazil"],
   egypt:                ["egipto", "egypt"],
   venezuela:            ["venezuela"],
-  turkey:               ["turquía", "turkey"],
+  turkey:               ["turquía", "turkey", "türkiye", "turkiye"],
   argentina:            ["argentina"],
   honduras:             ["honduras"],
   curacao:              ["curazao", "curacao", "curaçao"],
@@ -3750,8 +3803,11 @@ async function syncResultadoGoogle(partido) {
       return !id || arr.findIndex(e => (e.id || e.uid) === id) === i;
     });
 
+    // Incluir TSDB liga como fuente extra (tiene CORS abierto y cubre todo el torneo)
+    const tsdbLigaExtra = await fetchTSDB_liga(fechaAR).catch(()=>[]);
+    const tsdbLigaExtra2 = fechaExtra ? await fetchTSDB_liga(fechaExtra).catch(()=>[]) : [];
     const resESPN = extraerResultadoESPN(todosESPN, cfg);
-    const resTSDB = extraerResultadoTSDB([...tsdb, ...tsdb2], cfg);
+    const resTSDB = extraerResultadoTSDB([...tsdb, ...tsdb2, ...tsdbLigaExtra, ...tsdbLigaExtra2], cfg);
 
     let res = null;
     if (resESPN && !resESPN.live) res = resESPN;
@@ -3796,12 +3852,8 @@ async function fetchESPN_league(league, fecha) {
 
 // ── FUENTE 5: ESPN genérico de fútbol internacional ──
 async function fetchESPN_intl(fecha) {
-  const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  try {
-    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`, { signal: AbortSignal.timeout(6000) });
-    const d = await r.json();
-    return d.events || [];
-  } catch(e) { return []; }
+  // Esta función es alias de fetchESPN_mundial (evita duplicar lógica de proxy)
+  return fetchESPN_mundial(fecha);
 }
 
 // ── AUTO SYNC PARALELO — todos a la vez ──
@@ -3845,6 +3897,10 @@ async function autoSyncPartidos(forzar = false) {
   });
   const fechas = [...todasFechas];
   const fetchPorFecha = {};
+  // Fetch TSDB liga una sola vez (no por fecha, tiene todos los partidos del torneo)
+  const tsdbLigaEvs = await Promise.allSettled([fetchTSDB_liga()]);
+  const tsdbLigaTodos = tsdbLigaEvs[0]?.status === 'fulfilled' ? tsdbLigaEvs[0].value : [];
+
   await Promise.all(fechas.map(async fecha => {
     const [espnEvs, tsdbEvs, proxyEvs, intlEvs] = await Promise.allSettled([
       fetchESPN_mundial(fecha),
@@ -3852,9 +3908,11 @@ async function autoSyncPartidos(forzar = false) {
       fetchESPN_proxy('fifa.world', fecha),
       fetchESPN_intl(fecha),
     ]);
+    // Incluir eventos de liga TSDB filtrados por esta fecha
+    const tsdbLigaFecha = tsdbLigaTodos.filter(e => (e.dateEvent || '').startsWith(fecha));
     fetchPorFecha[fecha] = {
       espn:  espnEvs.status  === 'fulfilled' ? espnEvs.value  : [],
-      tsdb:  tsdbEvs.status  === 'fulfilled' ? tsdbEvs.value  : [],
+      tsdb:  [...(tsdbEvs.status === 'fulfilled' ? tsdbEvs.value : []), ...tsdbLigaFecha],
       proxy: proxyEvs.status === 'fulfilled' ? proxyEvs.value : [],
       intl:  intlEvs.status  === 'fulfilled' ? intlEvs.value  : [],
     };
