@@ -1170,7 +1170,6 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
 
     <button class="btn-login" id="btn-login" onclick="intentarLogin()">Entrar</button>
     <div class="login-error" id="login-error"></div>
-    <div style="margin-top:1rem;font-size:0.68rem;color:var(--text3);letter-spacing:1px;opacity:0.6">v44</div>
   </div>
 </div>
 
@@ -1391,7 +1390,8 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
     </div>
     <div class="wa-tabs">
       <button class="wa-tab active" id="wa-tab-tabla" onclick="waSetTab('tabla')">🏆 Tabla</button>
-      <button class="wa-tab" id="wa-tab-resultados" onclick="waSetTab('resultados')">⚽ Resultados</button>
+      <button class="wa-tab" id="wa-tab-partido" onclick="waSetTab('partido')">⚽ Partido</button>
+      <button class="wa-tab" id="wa-tab-resultados" onclick="waSetTab('resultados')">📋 Resultados</button>
       <button class="wa-tab" id="wa-tab-stats" onclick="waSetTab('stats')">📊 Stats</button>
     </div>
     <div class="wa-body">
@@ -1401,6 +1401,15 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
         <div class="wa-btn-row" style="margin-top:0.75rem">
           <button class="wa-btn wa-btn-copy" onclick="copiarTablaWA()">📋 Copiar</button>
           <button class="wa-btn wa-btn-send" onclick="enviarTablaWA()">💬 Abrir WhatsApp</button>
+        </div>
+      </div>
+      <div class="wa-section" id="wa-sec-partido">
+        <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.75rem;text-align:center">Seleccioná un partido en curso o reciente:</div>
+        <div id="wa-partido-selector" style="margin-bottom:0.75rem;display:flex;flex-direction:column;gap:0.4rem"></div>
+        <div class="wa-preview" id="wa-partido-preview" style="font-size:0.78rem;line-height:1.8;min-height:60px">← Seleccioná un partido arriba</div>
+        <div class="wa-btn-row" style="margin-top:0.75rem">
+          <button class="wa-btn wa-btn-copy" onclick="copiarPartidoWA()">📋 Copiar</button>
+          <button class="wa-btn wa-btn-send" onclick="enviarPartidoWA()">💬 Abrir WhatsApp</button>
         </div>
       </div>
       <div class="wa-section" id="wa-sec-resultados">
@@ -2158,6 +2167,12 @@ function renderPartidoFecha(p) {
   html += '<div class="pronosticos-row">' + pronsHTML + '</div>';
   if (!bloqueado && !tieneMarcador) html += '<div style="text-align:center;font-size:0.6rem;color:var(--text3);padding:0.1rem 0.9rem 0.4rem;opacity:0.7">🔒 Los pronósticos ajenos se revelan al cerrar el partido</div>';
   if (syncBadge) html += '<div style="padding:0.1rem 0.9rem 0.4rem;text-align:center">' + syncBadge + '</div>';
+  // Botón WhatsApp en partidos live o terminados (bloqueados con resultado)
+  if ((esLive || tieneMarcador) && (bloqueado || esLive)) {
+    html += '<div style="padding:0.1rem 0.9rem 0.5rem;text-align:center">'
+      + '<button onclick="abrirWAModal(\'partido\',\'' + p.id + '\')" style="background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.35);border-radius:8px;padding:0.3rem 0.9rem;cursor:pointer;color:#25d366;font-size:0.72rem;font-weight:700;letter-spacing:0.3px;transition:all 0.15s">📲 Compartir por WhatsApp</button>'
+      + '</div>';
+  }
   html += '</div>';
   return html;
 }
@@ -3501,82 +3516,29 @@ const SYNC_CONFIG = {
   'GL6': { localNorm:'panama',        visitaNorm:'england',           espnLeague:'fifa.world' },
 }
 
-// ── FUENTE 1: TheSportsDB — batch para el día (con alias de fecha y fallback) ──
+// ── FUENTE 1: TheSportsDB — batch para el día ──
 async function fetchTSDB_hoy(fecha) {
   const dia = fecha || new Date().toISOString().split('T')[0];
-  try {
-    const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${dia}&s=Soccer`, { signal: AbortSignal.timeout(6000) });
-    const d = await r.json();
-    return d.events || [];
-  } catch(e) { return []; }
+  const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsday.php?d=${dia}&s=Soccer`, { signal: AbortSignal.timeout(5000) });
+  const d = await r.json();
+  return d.events || [];
 }
 
-// ── FUENTE EXTRA: TSDB búsqueda por liga (FIFA World Cup 2026, id=4964) ──
-async function fetchTSDB_liga(fecha) {
-  // Liga FIFA World Cup 2026 en TSDB: id 4964 / temporada 2026
-  try {
-    const r = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsseason.php?id=4964&s=2026`, { signal: AbortSignal.timeout(8000) });
-    const d = await r.json();
-    const events = d.events || [];
-    if (!fecha) return events;
-    // Filtrar por fecha (strTimestamp o dateEvent)
-    return events.filter(e => (e.dateEvent || '').startsWith(fecha));
-  } catch(e) { return []; }
-}
-
-// ── FUENTE 2: ESPN mundial (directo, con fallback a proxy si CORS bloquea) ──
+// ── FUENTE 2: ESPN directo (sin proxy — permite CORS para scoreboard) ──
 async function fetchESPN_mundial(fecha) {
   const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`;
-  // Intentar directo primero
-  try {
-    const r = await fetch(espnUrl, { signal: AbortSignal.timeout(5000) });
-    const d = await r.json();
-    if (d.events) return d.events;
-  } catch(e) {}
-  // Fallback: corsproxy.io
-  try {
-    const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
-    const d = await r.json();
-    if (d.events) return d.events;
-  } catch(e) {}
-  // Fallback: codetabs
-  try {
-    const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
-    const d = await r.json();
-    if (d.events) return d.events;
-  } catch(e) {}
-  return [];
+  const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`, { signal: AbortSignal.timeout(5000) });
+  const d = await r.json();
+  return d.events || [];
 }
 
-// ── FUENTE 3: ESPN vía proxies CORS (intenta múltiples en orden) ──
+// ── FUENTE 3: ESPN vía allorigins como fallback ──
 async function fetchESPN_proxy(league, fecha) {
   const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`;
-  const proxies = [
-    async () => {
-      const r = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
-      const d = await r.json();
-      return d.events || [];
-    },
-    async () => {
-      const r = await fetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
-      const d = await r.json();
-      return d.events || [];
-    },
-    async () => {
-      const r = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(espnUrl)}`, { signal: AbortSignal.timeout(7000) });
-      const w = await r.json();
-      return JSON.parse(w.contents).events || [];
-    },
-  ];
-  for (const tryProxy of proxies) {
-    try {
-      const events = await tryProxy();
-      if (Array.isArray(events)) return events;
-    } catch(e) {}
-  }
-  return [];
+  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`)}`;
+  const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+  const w = await r.json();
+  return JSON.parse(w.contents).events || [];
 }
 
 // Alias para nombres que ESPN/TSDB reportan diferente
@@ -3653,7 +3615,7 @@ const TEAM_ALIASES = {
   brazil:               ["brasil", "brazil"],
   egypt:                ["egipto", "egypt"],
   venezuela:            ["venezuela"],
-  turkey:               ["turquía", "turkey", "türkiye", "turkiye"],
+  turkey:               ["turquía", "turkey"],
   argentina:            ["argentina"],
   honduras:             ["honduras"],
   curacao:              ["curazao", "curacao", "curaçao"],
@@ -3770,44 +3732,28 @@ async function syncResultadoGoogle(partido) {
   syncStatus[partido.id] = 'syncing';
   renderGrupos();
 
-  const fechaAR = partido.dt.split('T')[0];
-  const horaAR  = parseInt(partido.dt.split('T')[1].split(':')[0], 10);
-  function _fant(f) { const d = new Date(f+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()-1); return d.toISOString().split('T')[0]; }
-  const fechaExtra = horaAR < 6 ? _fant(fechaAR) : null;
+  // Usar la fecha real del partido (no "hoy"), para que funcione con partidos de ayer
+  const fecha = partido.dt.split('T')[0];
 
   try {
-    const fetches = [
-      fetchESPN_mundial(fechaAR),
-      fetchTSDB_hoy(fechaAR),
-      fetchESPN_proxy(cfg.espnLeague, fechaAR),
-      fetchESPN_intl(fechaAR),
-    ];
-    if (fechaExtra) {
-      fetches.push(fetchESPN_mundial(fechaExtra));
-      fetches.push(fetchTSDB_hoy(fechaExtra));
-      fetches.push(fetchESPN_proxy(cfg.espnLeague, fechaExtra));
-      fetches.push(fetchESPN_intl(fechaExtra));
-    }
-    const results = await Promise.allSettled(fetches);
-    const espn   = results[0]?.status === 'fulfilled' ? results[0].value : [];
-    const tsdb   = results[1]?.status === 'fulfilled' ? results[1].value : [];
-    const proxy  = results[2]?.status === 'fulfilled' ? results[2].value : [];
-    const intl   = results[3]?.status === 'fulfilled' ? results[3].value : [];
-    const espn2  = fechaExtra && results[4]?.status === 'fulfilled' ? results[4].value : [];
-    const tsdb2  = fechaExtra && results[5]?.status === 'fulfilled' ? results[5].value : [];
-    const proxy2 = fechaExtra && results[6]?.status === 'fulfilled' ? results[6].value : [];
-    const intl2  = fechaExtra && results[7]?.status === 'fulfilled' ? results[7].value : [];
+    const [espnEvs, tsdbEvs, espnProxyEvs, intlEvs] = await Promise.allSettled([
+      fetchESPN_friendly(fecha),
+      fetchTSDB_hoy(fecha),
+      fetchESPN_proxy(cfg.espnLeague, fecha),
+      fetchESPN_intl(fecha),
+    ]);
+    const espn  = espnEvs.status  === 'fulfilled' ? espnEvs.value  : [];
+    const tsdb  = tsdbEvs.status  === 'fulfilled' ? tsdbEvs.value  : [];
+    const proxy = espnProxyEvs.status === 'fulfilled' ? espnProxyEvs.value : [];
+    const intl  = intlEvs.status  === 'fulfilled' ? intlEvs.value  : [];
 
-    const todosESPN = [...espn, ...espn2, ...proxy, ...proxy2, ...intl, ...intl2].filter((ev, i, arr) => {
+    const todosESPN = [...espn, ...proxy, ...intl].filter((ev, i, arr) => {
       const id = ev.id || ev.uid;
       return !id || arr.findIndex(e => (e.id || e.uid) === id) === i;
     });
 
-    // Incluir TSDB liga como fuente extra (tiene CORS abierto y cubre todo el torneo)
-    const tsdbLigaExtra = await fetchTSDB_liga(fechaAR).catch(()=>[]);
-    const tsdbLigaExtra2 = fechaExtra ? await fetchTSDB_liga(fechaExtra).catch(()=>[]) : [];
     const resESPN = extraerResultadoESPN(todosESPN, cfg);
-    const resTSDB = extraerResultadoTSDB([...tsdb, ...tsdb2, ...tsdbLigaExtra, ...tsdbLigaExtra2], cfg);
+    const resTSDB = extraerResultadoTSDB(tsdb, cfg);
 
     let res = null;
     if (resESPN && !resESPN.live) res = resESPN;
@@ -3852,8 +3798,12 @@ async function fetchESPN_league(league, fecha) {
 
 // ── FUENTE 5: ESPN genérico de fútbol internacional ──
 async function fetchESPN_intl(fecha) {
-  // Esta función es alias de fetchESPN_mundial (evita duplicar lógica de proxy)
-  return fetchESPN_mundial(fecha);
+  const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
+  try {
+    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard${dateParam}`, { signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    return d.events || [];
+  } catch(e) { return []; }
 }
 
 // ── AUTO SYNC PARALELO — todos a la vez ──
@@ -3881,26 +3831,8 @@ async function autoSyncPartidos(forzar = false) {
   renderGrupos();
 
   // Agrupar partidos por fecha y hacer fetch correcto por día
-  // Para partidos de madrugada AR (00:00-05:59), ESPN los indexa en la fecha local del venue
-  // (noche anterior en América), así que también buscamos la fecha anterior.
-  function fechaAnterior(fechaStr) {
-    const d = new Date(fechaStr + 'T12:00:00Z');
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().split('T')[0];
-  }
-  const todasFechas = new Set();
-  partidosParaSync.forEach(p => {
-    const fechaAR = p.dt.split('T')[0];
-    const horaAR  = parseInt(p.dt.split('T')[1].split(':')[0], 10);
-    todasFechas.add(fechaAR);
-    if (horaAR < 6) todasFechas.add(fechaAnterior(fechaAR)); // madrugada AR = noche anterior en América
-  });
-  const fechas = [...todasFechas];
+  const fechas = [...new Set(partidosParaSync.map(p => p.dt.split('T')[0]))];
   const fetchPorFecha = {};
-  // Fetch TSDB liga una sola vez (no por fecha, tiene todos los partidos del torneo)
-  const tsdbLigaEvs = await Promise.allSettled([fetchTSDB_liga()]);
-  const tsdbLigaTodos = tsdbLigaEvs[0]?.status === 'fulfilled' ? tsdbLigaEvs[0].value : [];
-
   await Promise.all(fechas.map(async fecha => {
     const [espnEvs, tsdbEvs, proxyEvs, intlEvs] = await Promise.allSettled([
       fetchESPN_mundial(fecha),
@@ -3908,11 +3840,9 @@ async function autoSyncPartidos(forzar = false) {
       fetchESPN_proxy('fifa.world', fecha),
       fetchESPN_intl(fecha),
     ]);
-    // Incluir eventos de liga TSDB filtrados por esta fecha
-    const tsdbLigaFecha = tsdbLigaTodos.filter(e => (e.dateEvent || '').startsWith(fecha));
     fetchPorFecha[fecha] = {
       espn:  espnEvs.status  === 'fulfilled' ? espnEvs.value  : [],
-      tsdb:  [...(tsdbEvs.status === 'fulfilled' ? tsdbEvs.value : []), ...tsdbLigaFecha],
+      tsdb:  tsdbEvs.status  === 'fulfilled' ? tsdbEvs.value  : [],
       proxy: proxyEvs.status === 'fulfilled' ? proxyEvs.value : [],
       intl:  intlEvs.status  === 'fulfilled' ? intlEvs.value  : [],
     };
@@ -3923,15 +3853,8 @@ async function autoSyncPartidos(forzar = false) {
     const cfg = SYNC_CONFIG[p.id];
     if (!cfg) { syncStatus[p.id] = 'error'; continue; }
 
-    const fechaAR = p.dt.split('T')[0];
-    const horaAR  = parseInt(p.dt.split('T')[1].split(':')[0], 10);
-    // Para partidos de madrugada AR, combinar eventos de la fecha AR y la fecha anterior
-    const base  = fetchPorFecha[fechaAR]  || { espn:[], tsdb:[], proxy:[], intl:[] };
-    const extra = (horaAR < 6) ? (fetchPorFecha[fechaAnterior(fechaAR)] || { espn:[], tsdb:[], proxy:[], intl:[] }) : { espn:[], tsdb:[], proxy:[], intl:[] };
-    const espn  = [...base.espn,  ...extra.espn];
-    const tsdb  = [...base.tsdb,  ...extra.tsdb];
-    const proxy = [...base.proxy, ...extra.proxy];
-    const intl  = [...base.intl,  ...extra.intl];
+    const fecha = p.dt.split('T')[0];
+    const { espn, tsdb, proxy, intl } = fetchPorFecha[fecha] || { espn:[], tsdb:[], proxy:[], intl:[] };
 
     // Combinar todos los eventos de todas las fuentes ESPN para buscar
     const todosESPN = [...espn, ...proxy, ...intl].filter((ev, i, arr) => {
@@ -4037,12 +3960,12 @@ function applyProdeState(s) {
     guardarStorage('prode26_real', resultadosReal);
   }
   if (s.passwords) {
-    // Merge: la contraseña de la nube prevalece sobre la local (para bloquear re-registro)
-    // Si la nube tiene una contraseña para un jugador, esa es la oficial.
+    // Merge: la contraseña de la nube prevalece sobre la local SOLO si el local ya tiene una.
+    // Si el local no tiene contraseña (primera vez), se respeta para que el usuario pueda crearla.
     const passMerged = { ...passwords }; // empezar con las locales
     Object.keys(s.passwords).forEach(uid => {
-      // Si la nube tiene contraseña para este jugador, la nube gana siempre
-      passMerged[uid] = s.passwords[uid];
+      // La nube gana solo si ya hay una contraseña local (evita bloquear el primer registro)
+      if (s.passwords[uid] && passwords[uid]) passMerged[uid] = s.passwords[uid];
     });
     passwords = passMerged;
     guardarStorage('prode26_pass', passwords);
@@ -4428,11 +4351,13 @@ function flagEmoji(code) {
 }
 
 // ── WHATSAPP TABLA ──
-function abrirWAModal() {
+function abrirWAModal(tabInicial, partidoId) {
   generarTablaWA();
+  generarPartidoSelectorWA(partidoId);
   generarResultadosWA();
   generarStatsWA();
   document.getElementById('waModal').classList.add('open');
+  if (tabInicial) waSetTab(tabInicial);
 }
 
 function cerrarWAModal() {
@@ -4449,71 +4374,15 @@ function waSetTab(tab) {
 function generarTablaWA() {
   const tot = calcTotales();
   const ranking = JUGADORES.map(j => ({...j, ...tot[j.id]})).sort((a,b) => b.total - a.total);
-
   const MEDALLAS = ['🥇','🥈','🥉'];
-  const totalPartidos = GRUPOS.flatMap(g => g.partidos).length;
-  const jugados = GRUPOS.flatMap(g => g.partidos).filter(p => p.real.l !== null).length;
-
-  // Encontrar líder actual para highlight
-  const maxPts = ranking[0]?.total || 0;
-
   const lines = [];
-
-  // ── ENCABEZADO ──
-  lines.push('🏆 *PRODE MUNDIAL 2026* 🏆');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push(`⚽ Partidos jugados: *${jugados}/${totalPartidos}*`);
-  lines.push('');
-
-  // ── TABLA ──
-  lines.push('📊 *TABLA DE POSICIONES*');
-  lines.push('');
-
+  lines.push('⚽ *TABLA DE POSICIONES*');
   ranking.forEach((j, i) => {
     const medalla = MEDALLAS[i] || `${i+1}.`;
-    const esLider = i === 0 && j.total > 0;
-    const pct = j.pt > 0 ? Math.round((j.total / (j.pt * 5)) * 100) : 0;
-
-    // Fila principal
-    lines.push(`${medalla} *${j.nombre.toUpperCase()}*${esLider && ranking.length > 1 ? ' 👑' : ''}`);
-    lines.push(`    🟢 *${j.total} pts*  |  🎯 ${j.exactos} exactos  |  ✅ ${j.signos} signos`);
-    lines.push(`    📈 Efectividad: *${pct}%* (sobre el máximo posible)`);
-    lines.push('');
+    const corona = i === 0 && j.total > 0 ? ' 👑' : '';
+    const ultimo = i === ranking.length - 1 && ranking.length > 1 ? ' (Ultimo)' : '';
+    lines.push(`${medalla} *${j.nombre.toUpperCase()}*${corona}     🟢 *${j.total} pts*${ultimo}`);
   });
-
-  // ── DIFERENCIAS ──
-  if (ranking.length >= 2 && jugados > 0) {
-    lines.push('📐 *DIFERENCIAS*');
-    for (let i = 1; i < ranking.length; i++) {
-      const diff = ranking[0].total - ranking[i].total;
-      lines.push(`    ${ranking[i].nombre} está ${diff > 0 ? `*${diff} pts* detrás de ${ranking[0].nombre}` : 'empatado con el líder'}`);
-    }
-    lines.push('');
-  }
-
-  // ── PRÓXIMO PARTIDO ──
-  const ahora = Date.now();
-  const proximo = GRUPOS.flatMap(g => g.partidos)
-    .filter(p => {
-      const ts = new Date(p.dt + ':00-03:00').getTime();
-      return ts > ahora && p.real.l === null;
-    })
-    .sort((a,b) => new Date(a.dt+':00-03:00') - new Date(b.dt+':00-03:00'))[0];
-
-  if (proximo) {
-    const d = new Date(proximo.dt + ':00-03:00');
-    const DIAS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-    const hh = String(d.getHours()).padStart(2,'0');
-    const mm = String(d.getMinutes()).padStart(2,'0');
-    lines.push('⏭️ *PRÓXIMO PARTIDO*');
-    lines.push(`    ${flagEmoji(proximo.localFlag)} ${proximo.local} vs ${proximo.visita} ${flagEmoji(proximo.visitaFlag)}`);
-    lines.push(`    📅 ${DIAS[d.getDay()]} ${d.getDate()} · ⏰ ${hh}:${mm}hs`);
-    lines.push('');
-  }
-
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push('_Prode Mundial 2026_ ⚽🌎');
-
   const texto = lines.join('\n');
   document.getElementById('wa-tabla-preview').textContent = texto;
   return texto;
@@ -4534,6 +4403,104 @@ function copiarTablaWA() {
 
 function enviarTablaWA() {
   const text = document.getElementById('wa-tabla-preview').textContent;
+  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
+}
+
+// ── PARTIDO EN CURSO WA ──
+let _waPartidoSeleccionado = null;
+
+function generarPartidoSelectorWA(preselectedId) {
+  // Partidos live o con resultado reciente (bloqueados)
+  const candidatos = GRUPOS.flatMap(g => g.partidos.map(p => ({...p, _gNom: g.nombre})))
+    .filter(p => p.live || (p.real.l !== null && esBloqueado(p.dt)))
+    .sort((a, b) => {
+      // Live primero, luego por fecha desc
+      if (a.live && !b.live) return -1;
+      if (!a.live && b.live) return 1;
+      return dtArgentina(b.dt) - dtArgentina(a.dt);
+    });
+
+  const sel = document.getElementById('wa-partido-selector');
+  if (!candidatos.length) {
+    sel.innerHTML = '<div style="font-size:0.78rem;color:var(--text3);text-align:center;padding:0.5rem">No hay partidos en curso ni recientes</div>';
+    document.getElementById('wa-partido-preview').textContent = '';
+    return;
+  }
+
+  sel.innerHTML = candidatos.map(p => {
+    const isLive = !!p.live;
+    const marcador = p.real.l !== null ? `${p.real.l}–${p.real.v}` : 'vs';
+    const badge = isLive ? `<span style="color:#ff6b6b;font-size:0.65rem;font-weight:700">● LIVE</span>` : `<span style="color:#7de87d;font-size:0.65rem">✓ Final</span>`;
+    return `<button onclick="waSeleccionarPartido('${p.id}')" id="wa-psel-${p.id}"
+      style="background:rgba(255,255,255,0.04);border:1px solid rgba(57,209,96,0.2);border-radius:10px;
+        padding:0.45rem 0.75rem;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+        gap:0.5rem;color:#fff;font-size:0.8rem;transition:all 0.15s;text-align:left">
+      <span style="flex:1;font-weight:600">${p.local} vs ${p.visita}</span>
+      <span style="font-weight:700;font-size:0.9rem">${marcador}</span>
+      ${badge}
+    </button>`;
+  }).join('');
+
+  // Preselect
+  const pid = preselectedId || candidatos[0]?.id;
+  if (pid) waSeleccionarPartido(pid);
+}
+
+function waSeleccionarPartido(partidoId) {
+  _waPartidoSeleccionado = partidoId;
+  // Highlight del botón seleccionado
+  document.querySelectorAll('[id^="wa-psel-"]').forEach(b => {
+    b.style.borderColor = b.id === 'wa-psel-' + partidoId ? 'var(--verde-neon)' : 'rgba(57,209,96,0.2)';
+    b.style.background = b.id === 'wa-psel-' + partidoId ? 'rgba(57,209,96,0.12)' : 'rgba(255,255,255,0.04)';
+  });
+  const texto = generarMensajePartidoWA(partidoId);
+  document.getElementById('wa-partido-preview').textContent = texto || '';
+}
+
+function generarMensajePartidoWA(partidoId) {
+  const p = GRUPOS.flatMap(g => g.partidos).find(q => q.id === partidoId);
+  if (!p) return '';
+  const real = p.real;
+  const tieneMarcador = real.l !== null && real.v !== null;
+  const esLive = !!p.live;
+  const marcador = tieneMarcador ? `${real.l}–${real.v}` : 'en curso';
+  const estadoStr = esLive
+    ? (typeof p.live === 'string' && p.live !== 'true' ? `🔴 EN VIVO ${p.live}` : '🔴 EN VIVO')
+    : '✅ Final';
+
+  const lines = [];
+  lines.push(`${estadoStr}`);
+  lines.push(`Jugando *${p.local.toUpperCase()} vs ${p.visita.toUpperCase()}*`);
+  lines.push(`Resultado: *${marcador}*`);
+  lines.push('');
+  JUGADORES.forEach(j => {
+    const pr = (pronosticos[p.id]||{})[j.id] || {};
+    const tieneP = pr.l !== null && pr.l !== undefined;
+    const pron = tieneP ? `${pr.l}–${pr.v}` : '?–?';
+    const pts = (tieneMarcador && tieneP) ? calcPuntos(pr, real) : null;
+    const ptsStr = pts !== null ? (pts > 0 ? `+${pts}Pto${pts !== 1 ? 's' : ''}` : '0 Pts') : '';
+    lines.push(`⚽ *${j.nombre.toUpperCase()}*  *${pron}*  ${ptsStr}`);
+  });
+  return lines.join('\n');
+}
+
+function copiarPartidoWA() {
+  const text = document.getElementById('wa-partido-preview').textContent;
+  if (!text || text.startsWith('←')) return;
+  navigator.clipboard.writeText(text).then(() => {
+    showSyncBar('✅ Copiado al portapapeles', 'var(--verde-neon)');
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta);
+    showSyncBar('✅ Copiado', 'var(--verde-neon)');
+  });
+}
+
+function enviarPartidoWA() {
+  const text = document.getElementById('wa-partido-preview').textContent;
+  if (!text || text.startsWith('←')) return;
   window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
 }
 
@@ -5223,10 +5190,11 @@ function renderLedBanner() {
       let needsUpload = false;
 
       // Merge bidireccional:
-      // - Si la nube tiene contraseña para un jugador → la nube prevalece
+      // - Si la nube tiene contraseña para un jugador Y el local también la tiene → la nube prevalece
+      // - Si el local NO tiene contraseña (primera vez), la nube NO la sobreescribe (el usuario debe poder crearla)
       // - Si local tiene contraseña y la nube NO la tiene → conservar local y subir
       Object.keys(cloudPass).forEach(uid => {
-        if (cloudPass[uid]) passwords[uid] = cloudPass[uid];
+        if (cloudPass[uid] && passwords[uid]) passwords[uid] = cloudPass[uid];
       });
       // Detectar si hay contraseñas locales que la nube no tiene
       Object.keys(passwords).forEach(uid => {
