@@ -1393,7 +1393,6 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
       <button class="wa-tab" id="wa-tab-partido" onclick="waSetTab('partido')">⚽ Partido</button>
       <button class="wa-tab" id="wa-tab-resultados" onclick="waSetTab('resultados')">📋 Resultados</button>
       <button class="wa-tab" id="wa-tab-stats" onclick="waSetTab('stats')">📊 Stats</button>
-      <button class="wa-tab" id="wa-tab-figuritas" onclick="waSetTab('figuritas')">🃏 Figuritas</button>
     </div>
     <div class="wa-body">
       <div class="wa-section active" id="wa-sec-tabla">
@@ -1427,43 +1426,6 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
         <div class="wa-btn-row" style="margin-top:0.75rem">
           <button class="wa-btn wa-btn-copy" onclick="copiarStatsWA()">📋 Copiar</button>
           <button class="wa-btn wa-btn-send" onclick="enviarStatsWA()">💬 Abrir WhatsApp</button>
-        </div>
-      </div>
-
-      <!-- ══ FIGURITAS ══ -->
-      <div class="wa-section" id="wa-sec-figuritas">
-        <div style="font-size:0.8rem;color:var(--text2);margin-bottom:0.75rem;text-align:center">Registrá un intercambio de figuritas:</div>
-
-        <!-- Form nuevo intercambio -->
-        <div id="fig-form" style="background:rgba(0,0,0,0.25);border:1px solid rgba(57,209,96,0.2);border-radius:12px;padding:0.85rem;margin-bottom:0.75rem;display:flex;flex-direction:column;gap:0.55rem;">
-          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:0.4rem;align-items:center;">
-            <select id="fig-de" style="background:rgba(0,0,0,0.4);border:1px solid rgba(57,209,96,0.25);border-radius:8px;color:#fff;padding:0.45rem 0.5rem;font-size:0.82rem;outline:none;">
-              <option value="">De…</option>
-            </select>
-            <span style="color:var(--text3);font-size:0.9rem;font-weight:700">→</span>
-            <select id="fig-para" style="background:rgba(0,0,0,0.4);border:1px solid rgba(57,209,96,0.25);border-radius:8px;color:#fff;padding:0.45rem 0.5rem;font-size:0.82rem;outline:none;">
-              <option value="">Para…</option>
-            </select>
-          </div>
-          <input id="fig-nums" type="text" placeholder="Figuritas (ej: 23, 47, 112)" maxlength="120"
-            style="background:rgba(0,0,0,0.4);border:1px solid rgba(57,209,96,0.25);border-radius:8px;color:#fff;padding:0.45rem 0.75rem;font-size:0.82rem;outline:none;font-family:'DM Sans',sans-serif;">
-          <button onclick="registrarIntercambio()"
-            style="background:linear-gradient(135deg,#1a7a30,#0d4018);border:1px solid rgba(57,209,96,0.4);border-radius:8px;color:#fff;font-weight:700;font-size:0.85rem;padding:0.5rem;cursor:pointer;letter-spacing:0.5px;">
-            ➕ Agregar intercambio
-          </button>
-        </div>
-
-        <!-- Log preview -->
-        <div style="font-size:0.75rem;color:var(--text3);margin-bottom:0.4rem;text-align:center;letter-spacing:0.5px;">HISTORIAL · <span id="fig-count">0</span> intercambios</div>
-        <div class="wa-preview" id="wa-figuritas-preview" style="font-size:0.78rem;line-height:1.8;min-height:60px;max-height:200px;overflow-y:auto;"></div>
-
-        <div style="display:flex;gap:0.4rem;margin-top:0.6rem;flex-wrap:wrap;">
-          <button class="wa-btn wa-btn-copy" onclick="copiarFiguritasWA()" style="flex:1">📋 Copiar</button>
-          <button class="wa-btn wa-btn-send" onclick="enviarFiguritasWA()" style="flex:1">💬 WhatsApp</button>
-          <button onclick="limpiarLogFiguritas()"
-            style="background:rgba(232,25,44,0.1);border:1px solid rgba(232,25,44,0.3);border-radius:8px;color:#ff8899;font-size:0.78rem;padding:0.4rem 0.65rem;cursor:pointer;white-space:nowrap;">
-            🗑 Borrar log
-          </button>
         </div>
       </div>
     </div>
@@ -3610,6 +3572,7 @@ const TEAM_ALIASES = {
   canada:               ["canadá", "canada"],
   'republic of ireland':["irlanda", "ireland", "rep. of ireland"],
   haiti:                ["haití", "haiti"],
+  uruguay:              ["uruguay"],
   peru:                 ["perú", "peru"],
   'saudi arabia':       ["arabia saudita", "ksa", "saudi"],
   'burkina faso':       ["burkina faso"],
@@ -3641,6 +3604,7 @@ const TEAM_ALIASES = {
   usa:                  ["estados unidos", "usa", "united states"],
   germany:              ["alemania", "germany"],
   panama:               ["panamá", "panama"],
+  ghana:                ["ghana"],
   'bosnia and herzegovina': ["bosnia", "bosnia y herz.", "bosnia and herzegovina"],
   switzerland:          ["suiza", "switzerland"],
   australia:            ["australia"],
@@ -3653,7 +3617,7 @@ const TEAM_ALIASES = {
   brazil:               ["brasil", "brazil"],
   egypt:                ["egipto", "egypt"],
   venezuela:            ["venezuela"],
-  turkey:               ["turquía", "turkey"],
+  turkey:               ["turquía", "turkey", "türkiye", "turkiye"],
   argentina:            ["argentina"],
   honduras:             ["honduras"],
   curacao:              ["curazao", "curacao", "curaçao"],
@@ -4394,8 +4358,6 @@ function abrirWAModal(tabInicial, partidoId) {
   generarPartidoSelectorWA(partidoId);
   generarResultadosWA();
   generarStatsWA();
-  poblarSelectsFiguritas();
-  generarFiguritasWA();
   document.getElementById('waModal').classList.add('open');
   if (tabInicial) waSetTab(tabInicial);
 }
@@ -5256,142 +5218,6 @@ function renderLedBanner() {
     }
     styleEl.textContent = `@keyframes ledScroll { 0% { transform:translateX(0) } 100% { transform:translateX(-${pct}%) } }`;
   });
-}
-
-// ══════════════════════════════════════════════════════
-// FIGURITAS — Log de intercambios
-// ══════════════════════════════════════════════════════
-
-// Estructura: array de { id, ts, de, para, nums, deNombre, paraNombre }
-let logFiguritas = cargarStorage('prode26_figuritas', []);
-
-function poblarSelectsFiguritas() {
-  const selDe   = document.getElementById('fig-de');
-  const selPara = document.getElementById('fig-para');
-  if (!selDe || !selPara) return;
-  const opts = JUGADORES.map(j => `<option value="${j.id}">${j.nombre}</option>`).join('');
-  selDe.innerHTML   = '<option value="">De…</option>'   + opts;
-  selPara.innerHTML = '<option value="">Para…</option>' + opts;
-  // Pre-seleccionar usuario actual en "De"
-  if (usuarioActual) selDe.value = usuarioActual.id;
-}
-
-function registrarIntercambio() {
-  const deId   = document.getElementById('fig-de').value;
-  const paraId = document.getElementById('fig-para').value;
-  const nums   = document.getElementById('fig-nums').value.trim();
-
-  if (!deId || !paraId) {
-    showSyncBar('⚠️ Seleccioná quién da y quién recibe', '#ffaa44'); return;
-  }
-  if (deId === paraId) {
-    showSyncBar('⚠️ No podés intercambiar con vos mismo', '#ffaa44'); return;
-  }
-  if (!nums) {
-    showSyncBar('⚠️ Escribí los números de figuritas', '#ffaa44'); return;
-  }
-
-  const deJug   = JUGADORES.find(j => j.id === deId);
-  const paraJug = JUGADORES.find(j => j.id === paraId);
-
-  const entrada = {
-    id:        Date.now() + '_' + Math.random().toString(36).slice(2,6),
-    ts:        Date.now(),
-    de:        deId,
-    para:      paraId,
-    deNombre:  deJug  ? deJug.nombre  : deId,
-    paraNombre:paraJug ? paraJug.nombre : paraId,
-    nums:      nums
-  };
-
-  logFiguritas.unshift(entrada); // más reciente primero
-  guardarStorage('prode26_figuritas', logFiguritas);
-
-  // Limpiar input nums
-  document.getElementById('fig-nums').value = '';
-
-  generarFiguritasWA();
-  showSyncBar('✅ Intercambio registrado', 'var(--verde-neon)');
-}
-
-function limpiarLogFiguritas() {
-  if (!confirm('¿Borrar todo el historial de intercambios?')) return;
-  logFiguritas = [];
-  guardarStorage('prode26_figuritas', logFiguritas);
-  generarFiguritasWA();
-  showSyncBar('🗑 Historial borrado', '#ffaa44');
-}
-
-function generarFiguritasWA() {
-  const count = document.getElementById('fig-count');
-  if (count) count.textContent = logFiguritas.length;
-
-  const preview = document.getElementById('wa-figuritas-preview');
-  if (!preview) return '';
-
-  if (!logFiguritas.length) {
-    preview.textContent = 'Sin intercambios registrados aún.';
-    return '';
-  }
-
-  const DIAS_ES   = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  const MESES_ES  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-
-  const lines = [];
-  lines.push('🃏 *LOG DE FIGURITAS*');
-  lines.push('🏆 Prode Mundial 2026');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━');
-
-  // Agrupar por día
-  const porDia = {};
-  logFiguritas.forEach(e => {
-    const d   = new Date(e.ts);
-    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    if (!porDia[key]) porDia[key] = [];
-    porDia[key].push(e);
-  });
-
-  Object.keys(porDia).sort().reverse().forEach(dia => {
-    const d        = new Date(dia + 'T12:00:00');
-    const nombreDia = `${DIAS_ES[d.getDay()]} ${d.getDate()} ${MESES_ES[d.getMonth()]}`;
-    lines.push('');
-    lines.push(`📅 *${nombreDia.toUpperCase()}*`);
-    porDia[dia].forEach(e => {
-      const hora = new Date(e.ts);
-      const hh   = String(hora.getHours()).padStart(2,'0');
-      const mm   = String(hora.getMinutes()).padStart(2,'0');
-      lines.push(`🔄 *${e.deNombre}* → *${e.paraNombre}*  [${e.nums}]  _(${hh}:${mm})_`);
-    });
-  });
-
-  lines.push('');
-  lines.push('━━━━━━━━━━━━━━━━━━━━━━');
-  lines.push(`Total: *${logFiguritas.length}* intercambio${logFiguritas.length !== 1 ? 's' : ''}`);
-  lines.push('_Prode Mundial 2026_ ⚽🃏');
-
-  const texto = lines.join('\n');
-  preview.textContent = texto;
-  return texto;
-}
-
-function copiarFiguritasWA() {
-  const text = document.getElementById('wa-figuritas-preview').textContent;
-  if (!text || text.startsWith('Sin')) { showSyncBar('⚠️ No hay intercambios para copiar', '#ffaa44'); return; }
-  navigator.clipboard.writeText(text).then(() => {
-    showSyncBar('✅ Log copiado al portapapeles', 'var(--verde-neon)');
-  }).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta);
-    showSyncBar('✅ Copiado', 'var(--verde-neon)');
-  });
-}
-
-function enviarFiguritasWA() {
-  const text = document.getElementById('wa-figuritas-preview').textContent;
-  if (!text || text.startsWith('Sin')) { showSyncBar('⚠️ No hay intercambios para enviar', '#ffaa44'); return; }
-  window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank');
 }
 
 // ── INIT — ejecutar después de que todas las funciones estén definidas ──
