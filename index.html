@@ -3875,12 +3875,19 @@ async function autoSyncPartidos(forzar = false) {
 
   // Agrupar partidos por fecha y hacer fetch correcto por día
   // Extraer fechas en UTC (ESPN indexa por UTC). Los dt están en UTC-3.
-  const fechas = [...new Set(partidosParaSync.flatMap(p => {
+  // También se incluye fechaUTC-1: partidos de madrugada (ej. 00:00 ARG) a veces quedan
+  // indexados por ESPN/TSDB bajo la fecha de la sede en EE.UU./Canadá/México, que puede ser
+  // un día antes que la fecha UTC (ej. Turquía vs Paraguay, 00:00 ARG en Levi's Stadium/CA).
+  const fechasPorPartido = {};
+  partidosParaSync.forEach(p => {
     const dtU = new Date(p.dt + ':00-03:00');
     const fu = dtU.toISOString().split('T')[0];
     const fl = p.dt.split('T')[0];
-    return fu === fl ? [fu] : [fu, fl];
-  }))];
+    const dUMenos1 = new Date(dtU.getTime() - 24*60*60*1000);
+    const fuMenos1 = dUMenos1.toISOString().split('T')[0];
+    fechasPorPartido[p.id] = [...new Set([fu, fl, fuMenos1])];
+  });
+  const fechas = [...new Set(Object.values(fechasPorPartido).flat())];
   const fetchPorFecha = {};
   await Promise.all(fechas.map(async fecha => {
     const [espnEvs, tsdbEvs, proxyEvs, intlEvs] = await Promise.allSettled([
@@ -3902,8 +3909,11 @@ async function autoSyncPartidos(forzar = false) {
     const cfg = SYNC_CONFIG[p.id];
     if (!cfg) { syncStatus[p.id] = 'error'; continue; }
 
-    const fecha = p.dt.split('T')[0];
-    const { espn, tsdb, proxy, intl } = fetchPorFecha[fecha] || { espn:[], tsdb:[], proxy:[], intl:[] };
+    const fechasCandidatas = fechasPorPartido[p.id] || [p.dt.split('T')[0]];
+    const espn  = fechasCandidatas.flatMap(f => (fetchPorFecha[f] || {}).espn  || []);
+    const tsdb  = fechasCandidatas.flatMap(f => (fetchPorFecha[f] || {}).tsdb  || []);
+    const proxy = fechasCandidatas.flatMap(f => (fetchPorFecha[f] || {}).proxy || []);
+    const intl  = fechasCandidatas.flatMap(f => (fetchPorFecha[f] || {}).intl  || []);
 
     // Combinar todos los eventos de todas las fuentes ESPN para buscar
     const todosESPN = [...espn, ...proxy, ...intl].filter((ev, i, arr) => {
