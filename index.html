@@ -1697,11 +1697,11 @@ function tiempoDeJuego(dt) {
   return null; // ya pasó mucho tiempo, probablemente terminó
 }
 function esBloqueado(dt) {
-  const limite = dtArgentina(dt) - 30 * 60 * 1000; // 30 min antes hora Argentina
+  const limite = dtArgentina(dt) - 10 * 60 * 1000; // 10 min antes hora Argentina
   return Date.now() >= limite;
 }
 function tiempoRestante(dt) {
-  const ms = dtArgentina(dt) - 30 * 60 * 1000 - Date.now();
+  const ms = dtArgentina(dt) - 10 * 60 * 1000 - Date.now();
   if (ms <= 0) return null;
   const h = Math.floor(ms / 3600000);
   const m = Math.floor((ms % 3600000) / 60000);
@@ -4464,65 +4464,23 @@ function generarMensajePartidoWA(partidoId) {
   const tieneMarcador = real.l !== null && real.v !== null;
   const esLive = !!p.live;
   const marcador = tieneMarcador ? `${real.l}–${real.v}` : 'en curso';
-  const estadoStr = esLive ? '🔴 EN VIVO' : '✅ Final';
+  const estadoStr = esLive
+    ? (typeof p.live === 'string' && p.live !== 'true' ? `🔴 EN VIVO ${p.live}` : '🔴 EN VIVO')
+    : '✅ Final';
 
   const lines = [];
-
-  // ── CABECERA PARTIDO ──
-  lines.push(`⏱️ *Minuto a Minuto* ${estadoStr}`);
-  lines.push(`⚽*${p.local.toUpperCase()} vs ${p.visita.toUpperCase()}*`);
+  lines.push(`${estadoStr}`);
+  lines.push(`Jugando *${p.local.toUpperCase()} vs ${p.visita.toUpperCase()}*`);
   lines.push(`Resultado: *${marcador}*`);
   lines.push('');
-
-  // ── PRONÓSTICOS + COLOR POR PUNTOS ──
   JUGADORES.forEach(j => {
     const pr = (pronosticos[p.id]||{})[j.id] || {};
     const tieneP = pr.l !== null && pr.l !== undefined;
     const pron = tieneP ? `${pr.l}–${pr.v}` : '?–?';
     const pts = (tieneMarcador && tieneP) ? calcPuntos(pr, real) : null;
-    let circulo = '';
-    let ptsStr = '';
-    if (pts !== null) {
-      if (pts >= 5)          { circulo = '🟢'; ptsStr = `+${pts}Ptos`; }
-      else if (pts >= 2)     { circulo = '🟡'; ptsStr = `+${pts}Ptos`; }
-      else                   { circulo = '🔴'; ptsStr = `+${pts}Ptos`; }
-    }
-    lines.push(`⚽*${j.nombre.toUpperCase()}*  *${pron}*  ${circulo}${ptsStr}`);
+    const ptsStr = pts !== null ? (pts > 0 ? `+${pts}Pto${pts !== 1 ? 's' : ''}` : '0 Pts') : '';
+    lines.push(`⚽ *${j.nombre.toUpperCase()}*  *${pron}*  ${ptsStr}`);
   });
-  lines.push('');
-
-  // ── TABLA DE POSICIONES ──
-  const tot = calcTotales();
-  const ranking = JUGADORES.map(j => ({...j, ...tot[j.id]})).sort((a,b) => b.total - a.total);
-  const MEDALLAS = ['🥇','🥈'];
-  lines.push('📈 *TABLA DE POSICIONES*');
-  ranking.forEach((j, i) => {
-    const esUltimo = i === ranking.length - 1;
-    const icono = esUltimo ? '⬇️' : (MEDALLAS[i] || `${i+1}.`);
-    const corona = i === 0 && j.total > 0 ? ' 👑' : '';
-    const sufijo = esUltimo ? ' (Al Descenso)' : '';
-    lines.push(`${icono} *${j.nombre.toUpperCase()}*${corona}     🟢 *${j.total} pts*${sufijo}`);
-  });
-  lines.push('');
-
-  // ── ESTADÍSTICAS ÚLTIMOS 3 PARTIDOS ──
-  const todosPartidos = GRUPOS.flatMap(g => g.partidos)
-    .filter(q => q.real.l !== null && q.real.v !== null)
-    .sort((a, b) => dtArgentina(b.dt) - dtArgentina(a.dt));
-  const ultimos3 = todosPartidos.slice(0, 3);
-  const maxPts3 = ultimos3.length * 5; // máximo posible: 5 pts x partido
-
-  lines.push(`📊 Estadísticas últimos ${ultimos3.length} Partidos`);
-  ranking.forEach(j => {
-    let sumaUlt = 0;
-    ultimos3.forEach(q => {
-      const pr2 = (pronosticos[q.id]||{})[j.id] || {};
-      const tieneP2 = pr2.l !== null && pr2.l !== undefined;
-      if (tieneP2) sumaUlt += calcPuntos(pr2, q.real);
-    });
-    lines.push(`📝 *${j.nombre.toUpperCase()}* - *${sumaUlt} pts* de ${maxPts3} ptos`);
-  });
-
   return lines.join('\n');
 }
 
