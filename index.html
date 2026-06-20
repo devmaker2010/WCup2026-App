@@ -2141,7 +2141,10 @@ function renderPartidoFecha(p) {
     if (tieneMarcador) return '<span class="sync-badge" style="cursor:pointer;opacity:0.4;font-size:0.55rem" onclick="syncResultadoGoogle(GRUPOS.flatMap(g=>g.partidos).find(q=>q.id===\'' + p.id + '\'))">🔄</span>';
     if (!st) return '';
     const cls = st==='syncing'?'syncing':st==='error'?'error':'';
-    const txt = st==='syncing'?'⟳ Buscando...':st==='error'?'⚠ Reintentar':('✓ '+src);
+    if (st === 'error') {
+      return '<span class="sync-badge error" style="cursor:pointer;font-size:0.58rem" onclick="syncResultadoGoogle(GRUPOS.flatMap(g=>g.partidos).find(q=>q.id===\'' + p.id + '\'))">⟳ Reintentar</span>';
+    }
+    const txt = st==='syncing'?'⟳ Buscando...':('✓ '+src);
     return '<span class="sync-badge ' + cls + '" style="cursor:pointer;font-size:0.58rem" onclick="syncResultadoGoogle(GRUPOS.flatMap(g=>g.partidos).find(q=>q.id===\'' + p.id + '\'))">' + txt + '</span>';
   })();
 
@@ -3535,10 +3538,24 @@ async function fetchESPN_mundial(fecha) {
 // ── FUENTE 3: ESPN vía allorigins como fallback ──
 async function fetchESPN_proxy(league, fecha) {
   const dateParam = fecha ? `?dates=${fecha.replace(/-/g,'')}` : '';
-  const url = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`)}`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
-  const w = await r.json();
-  return JSON.parse(w.contents).events || [];
+  const targetUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${dateParam}`;
+  // Intento 1: allorigins.win
+  try {
+    const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(7000) });
+    const w = await r.json();
+    return JSON.parse(w.contents).events || [];
+  } catch(e) {
+    // Intento 2 (fallback): corsproxy.io
+    try {
+      const url2 = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
+      const r2 = await fetch(url2, { signal: AbortSignal.timeout(7000) });
+      const d2 = await r2.json();
+      return d2.events || [];
+    } catch(e2) {
+      return [];
+    }
+  }
 }
 
 // Alias para nombres que ESPN/TSDB reportan diferente
@@ -3734,16 +3751,35 @@ async function syncResultadoGoogle(partido) {
   syncStatus[partido.id] = 'syncing';
   renderGrupos();
 
-  // Usar la fecha real del partido (no "hoy"), para que funcione con partidos de ayer
-  const fecha = partido.dt.split('T')[0];
+  // Usar la fecha real del partido en UTC (ESPN indexa por UTC).
+  // Los dt están en hora argentina (UTC-3), así que convertimos a UTC antes de extraer la fecha.
+  const dtUTC = new Date(partido.dt + ':00-03:00');
+  const fechaUTC = dtUTC.toISOString().split('T')[0];
+  // También buscar en la fecha UTC-3 original por si acaso
+  const fechaLocal = partido.dt.split('T')[0];
+  // Partidos de madrugada (ej. 00:00 ARG) a veces quedan indexados por ESPN/TSDB bajo la fecha
+  // del estadio (horario local de la sede en EE.UU./Canadá/México), que puede ser un día antes
+  // que la fecha UTC. Ej: Turquía vs Paraguay, 00:00 ARG en Levi's Stadium (CA), es las 20:00
+  // del día anterior en California → ESPN lo cataloga un día antes.
+  const dUTCMenos1 = new Date(dtUTC.getTime() - 24*60*60*1000);
+  const fechaUTCMenos1 = dUTCMenos1.toISOString().split('T')[0];
+  const fecha = fechaUTC; // usar UTC como fecha primaria
+  const diag = { fecha: fechaUTC + ' (UTC) / ' + fechaLocal + ' (local) / ' + fechaUTCMenos1 + ' (UTC-1, sede EE.UU.)', partido: partido.id };
 
   try {
+    // Buscar en: fecha UTC, fecha local (ARG) si difiere, y fecha UTC-1 (por husos horarios de sede en EE.UU./Canadá/México)
+    const fechasABuscar = [...new Set([fechaUTC, fechaLocal, fechaUTCMenos1])];
     const [espnEvs, tsdbEvs, espnProxyEvs, intlEvs] = await Promise.allSettled([
-      fetchESPN_friendly(fecha),
-      fetchTSDB_hoy(fecha),
-      fetchESPN_proxy(cfg.espnLeague, fecha),
-      fetchESPN_intl(fecha),
+      Promise.all(fechasABuscar.map(f => fetchESPN_mundial(f))).then(arrs => arrs.flat()),
+      Promise.all(fechasABuscar.map(f => fetchTSDB_hoy(f))).then(arrs => arrs.flat()),
+      Promise.all(fechasABuscar.map(f => fetchESPN_proxy(cfg.espnLeague, f))).then(arrs => arrs.flat()),
+      Promise.all(fechasABuscar.map(f => fetchESPN_intl(f))).then(arrs => arrs.flat()),
     ]);
+    diag.espn  = espnEvs.status  === 'fulfilled' ? `ok (${espnEvs.value.length} eventos)`  : 'FALLÓ: ' + (espnEvs.reason?.message || espnEvs.reason);
+    diag.tsdb  = tsdbEvs.status  === 'fulfilled' ? `ok (${tsdbEvs.value.length} eventos)`  : 'FALLÓ: ' + (tsdbEvs.reason?.message || tsdbEvs.reason);
+    diag.proxy = espnProxyEvs.status === 'fulfilled' ? `ok (${espnProxyEvs.value.length} eventos)` : 'FALLÓ: ' + (espnProxyEvs.reason?.message || espnProxyEvs.reason);
+    diag.intl  = intlEvs.status  === 'fulfilled' ? `ok (${intlEvs.value.length} eventos)`  : 'FALLÓ: ' + (intlEvs.reason?.message || intlEvs.reason);
+
     const espn  = espnEvs.status  === 'fulfilled' ? espnEvs.value  : [];
     const tsdb  = tsdbEvs.status  === 'fulfilled' ? tsdbEvs.value  : [];
     const proxy = espnProxyEvs.status === 'fulfilled' ? espnProxyEvs.value : [];
@@ -3756,6 +3792,8 @@ async function syncResultadoGoogle(partido) {
 
     const resESPN = extraerResultadoESPN(todosESPN, cfg);
     const resTSDB = extraerResultadoTSDB(tsdb, cfg);
+    diag.matchEspn = resESPN ? JSON.stringify(resESPN) : 'sin match (' + cfg.localNorm + ' vs ' + cfg.visitaNorm + ')';
+    diag.matchTsdb = resTSDB ? JSON.stringify(resTSDB) : 'sin match';
 
     let res = null;
     if (resESPN && !resESPN.live) res = resESPN;
@@ -3782,8 +3820,11 @@ async function syncResultadoGoogle(partido) {
       syncStatus[partido.id] = 'error';
     }
   } catch(e) {
+    diag.errorGeneral = e?.message || String(e);
     syncStatus[partido.id] = 'error';
   }
+  window._lastSyncDiag = window._lastSyncDiag || {};
+  window._lastSyncDiag[partido.id] = diag;
   renderGrupos();
   if (usuarioActual) renderTabla();
 }
@@ -3827,13 +3868,19 @@ async function autoSyncPartidos(forzar = false) {
       partidosParaSync.push(p);
     }
   }));
-  if (partidosParaSync.length === 0) return;
+  if (partidosParaSync.length === 0) return false;
 
   partidosParaSync.forEach(p => { syncStatus[p.id] = 'syncing'; });
   renderGrupos();
 
   // Agrupar partidos por fecha y hacer fetch correcto por día
-  const fechas = [...new Set(partidosParaSync.map(p => p.dt.split('T')[0]))];
+  // Extraer fechas en UTC (ESPN indexa por UTC). Los dt están en UTC-3.
+  const fechas = [...new Set(partidosParaSync.flatMap(p => {
+    const dtU = new Date(p.dt + ':00-03:00');
+    const fu = dtU.toISOString().split('T')[0];
+    const fl = p.dt.split('T')[0];
+    return fu === fl ? [fu] : [fu, fl];
+  }))];
   const fetchPorFecha = {};
   await Promise.all(fechas.map(async fecha => {
     const [espnEvs, tsdbEvs, proxyEvs, intlEvs] = await Promise.allSettled([
@@ -3900,6 +3947,7 @@ async function autoSyncPartidos(forzar = false) {
   renderPorDia();
   if (usuarioActual) renderLedBanner();
   if (usuarioActual) renderTabla();
+  return alguno;
 }
 
 // ═══════════════════════════════════════════════
@@ -4801,22 +4849,46 @@ async function actualizarPartidosOnline(btn) {
   const spin = setInterval(() => { angle += 30; if(icon) icon.style.transform = `rotate(${angle}deg)`; }, 80);
   showSyncBar('🔄 Forzando actualización de resultados...', '#f5c842');
   try {
-    // Limpiar resultados de partidos de las últimas 48h para forzar re-consulta
+    // Guardar respaldo de resultados actuales (NO borrar antes de re-consultar:
+    // si el fetch falla, no queremos perder datos que ya estaban bien).
+    const respaldoReal = JSON.parse(JSON.stringify(resultadosReal));
+    const respaldoLive = {};
     const ahora = Date.now();
+    const partidosAfectados = [];
     GRUPOS.forEach(g => g.partidos.forEach(p => {
       const dtTs = new Date(p.dt + ':00-03:00').getTime();
       const empezado = dtTs <= ahora;
       const dentroDe48h = dtTs >= ahora - 48 * 60 * 60 * 1000;
       if (empezado && dentroDe48h && p.syncGoogle) {
-        p.real = { l: null, v: null };
-        delete resultadosReal[p.id];
+        respaldoLive[p.id] = p.live;
+        partidosAfectados.push(p);
       }
     }));
-    guardarStorage('prode26_real', resultadosReal);
-    await autoSyncPartidos(true);
-    showSyncBar('✅ Resultados actualizados desde internet', 'var(--verde-neon)');
+
+    const huboCambios = await autoSyncPartidos(true);
+
+    // Si después de forzar el sync ningún partido afectado tiene resultado
+    // (la consulta no encontró nada en ninguna fuente), restaurar el respaldo
+    // en vez de dejar todo en blanco.
+    const todosVaciosAhora = partidosAfectados.every(p => p.real.l === null);
+    const habiaAlgunoConDatoAntes = partidosAfectados.some(p => respaldoReal[p.id]);
+    if (todosVaciosAhora && habiaAlgunoConDatoAntes) {
+      partidosAfectados.forEach(p => {
+        if (respaldoReal[p.id]) {
+          p.real = respaldoReal[p.id];
+          resultadosReal[p.id] = respaldoReal[p.id];
+        }
+        p.live = respaldoLive[p.id];
+      });
+      guardarStorage('prode26_real', resultadosReal);
+      renderGrupos();
+      renderPorDia();
+      showSyncBar('⚠️ No se encontró el partido en ninguna fuente (ESPN/TSDB). Se mantuvo el resultado anterior.', '#ffaa44');
+    } else {
+      showSyncBar('✅ Resultados actualizados desde internet', 'var(--verde-neon)');
+    }
   } catch(e) {
-    showSyncBar('⚠️ Error al actualizar partidos', '#ffaa44');
+    showSyncBar('⚠️ Error al actualizar partidos: ' + (e?.message || 'sin conexión'), '#ffaa44');
   }
   clearInterval(spin);
   if (icon) icon.style.transform = '';
