@@ -2857,17 +2857,21 @@ function renderDiaRow(p) {
     else if (pts === 0 && tieneMarcador) badge = '<span class="pron-pts-badge pts-0">+0</span>';
     const esMio = usuarioActual && j.id === usuarioActual.id;
     const puedeEditar = esMio && !bloqueado && !tieneMarcador;
+    // Ocultar pronósticos ajenos hasta que el partido esté bloqueado o tenga resultado (igual que en la vista calendario)
+    const pronVisible = esMio || bloqueado || tieneMarcador;
+    const marcadorMostrado = pronVisible ? (tieneP ? pr.l+'–'+pr.v : '?–?') : '<span style="opacity:0.4;font-size:0.8em">🔒</span>';
     return `
       <div class="pron-item" style="min-width:0">
         <div class="pron-jugador" style="color:${j.color}">${j.nombre}</div>
-        <div class="pron-marcador">${tieneP ? pr.l+'–'+pr.v : '?–?'}</div>
-        ${badge}
+        <div class="pron-marcador">${marcadorMostrado}</div>
+        ${pronVisible ? badge : ''}
         ${esMio ? `<button class="btn-edit-pron" ${puedeEditar?'':'disabled'}
           onclick="abrirModal('${p.id}','${(p.local+' vs '+p.visita).replace(/'/g,"\\'")}','${p.local.replace(/'/g,"\\'")}','${p.visita.replace(/'/g,"\\'")}','${p.localFlag}','${p.visitaFlag}')">
           ${puedeEditar ? '✏ Cambiar' : bloqueado ? '🔒' : '✓'}
         </button>` : ''}
       </div>`;
   }).join('');
+
 
   const syncBadge = p.syncGoogle && bloqueado ? (() => {
     const st = syncStatus[p.id];
@@ -2984,6 +2988,53 @@ function calcAudaz(jugados) {
     });
   });
   return { audaz: { jugador: maxJugador, partido: maxPartido, goles: maxGoles }, conservador: { jugador: minJugador, partido: minPartido, goles: minGoles } };
+}
+
+// ── Helper: ranking del más conservador del torneo (veces que fue el de menos goles pronosticados + promedio) ──
+function calcConservadorTorneo(jugados) {
+  const stats = {};
+  JUGADORES.forEach(j => { stats[j.id] = { vecesConservador: 0, sumaGoles: 0, conPron: 0 }; });
+
+  jugados.forEach(p => {
+    const filas = JUGADORES.map(j => {
+      const pr = (pronosticos[p.id]||{})[j.id];
+      const tienePr = pr && pr.l !== null && pr.l !== undefined;
+      const totalGoles = tienePr ? Number(pr.l) + Number(pr.v) : null;
+      return { jugador: j, totalGoles };
+    });
+    const conPron = filas.filter(f => f.totalGoles !== null);
+    if (!conPron.length) return;
+    const minGoles = Math.min(...conPron.map(f => f.totalGoles));
+    conPron.forEach(f => {
+      stats[f.jugador.id].sumaGoles += f.totalGoles;
+      stats[f.jugador.id].conPron++;
+      if (f.totalGoles === minGoles) stats[f.jugador.id].vecesConservador++;
+    });
+  });
+
+  return JUGADORES.map(j => {
+    const s = stats[j.id];
+    const promedio = s.conPron > 0 ? (s.sumaGoles / s.conPron) : 0;
+    return { ...j, vecesConservador: s.vecesConservador, promedio, conPron: s.conPron };
+  }).sort((a,b) => b.vecesConservador - a.vecesConservador || a.promedio - b.promedio);
+}
+
+// ── Helper: pronósticos de cada jugador partido por partido, marcando el más conservador ──
+function calcPronosticosPorPartido(jugados) {
+  return jugados.map(p => {
+    const filas = JUGADORES.map(j => {
+      const pr = (pronosticos[p.id]||{})[j.id];
+      const tienePr = pr && pr.l !== null && pr.l !== undefined;
+      const totalGoles = tienePr ? Number(pr.l) + Number(pr.v) : null;
+      const pts = tienePr ? calcPuntos(pr, p.real) : null;
+      return { jugador: j, pr: tienePr ? pr : null, totalGoles, pts };
+    });
+    // El más conservador del partido: menor cantidad de goles totales pronosticados
+    const conPron = filas.filter(f => f.totalGoles !== null);
+    let minGoles = conPron.length ? Math.min(...conPron.map(f => f.totalGoles)) : null;
+    filas.forEach(f => { f.esConservador = conPron.length > 0 && f.totalGoles === minGoles; });
+    return { p, filas };
+  });
 }
 
 // ── Helper: grafico SVG evolución de puntos ──
@@ -3181,6 +3232,24 @@ function renderStats() {
       </div>
     </div>`;
 
+  // ── 5b. PODIO MÁS CONSERVADOR DEL TORNEO ──
+  const conservadorRanking = calcConservadorTorneo(jugados);
+  const conservadorMedals = ['🥇','🥈','🥉'];
+  const conservadorPodioHTML = conservadorRanking.some(j => j.conPron > 0) ? `
+    <div class="exactos-podio">
+      <div class="exactos-podio-title">🛡 Podio Más Conservador del Torneo</div>
+      <div class="exactos-podio-grid">
+        ${conservadorRanking.map((j, i) => `
+          <div class="exactos-podio-cell">
+            <div class="exactos-pos">${conservadorMedals[i] || (i+1)}</div>
+            <div class="exactos-nombre" style="color:${j.color}">${j.nombre}</div>
+            <div class="exactos-num">${j.vecesConservador}</div>
+            <div class="exactos-lbl">veces más cauto</div>
+            <div style="font-size:0.6rem;color:var(--text3);margin-top:2px">prom. ${j.promedio.toFixed(1)} goles/partido</div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
   // ── 9. PUNTOS MÁXIMOS POSIBLES ──
   const ptsMaxPorPartidoRestante = 5; // máximo por partido (3 base + 2 bonus goles)
   const ptosMaxExtras = restantes * ptsMaxPorPartidoRestante;
@@ -3226,6 +3295,31 @@ function renderStats() {
           <span style="font-size:0.7rem;color:var(--text3);margin-left:6px">${conservador.partido.p.local} vs ${conservador.partido.p.visita}</span>
         </div>
         <span class="audaz-sub" style="color:#90d8ff">${conservador.partido.pr.l}–${conservador.partido.pr.v} (${conservador.goles} goles)</span>
+      </div>
+    </div>` : '';
+
+  // ── 3b. PRONÓSTICOS DE CADA UNO POR PARTIDO (con marca de más conservador) ──
+  const pronosPorPartido = calcPronosticosPorPartido(jugados);
+  const pronosPorPartidoHTML = pronosPorPartido.length > 0 ? `
+    <div class="audaz-section" style="margin-bottom:1.25rem">
+      <div class="audaz-section-title">🛡 Pronósticos por Partido · Más Conservador</div>
+      <div style="display:flex;flex-direction:column;gap:0.5rem">
+        ${pronosPorPartido.map(({p, filas}) => `
+          <div style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.55rem 0.65rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.72rem;color:var(--text2);margin-bottom:0.4rem">
+              ${flag(p.localFlag)} <span style="font-weight:600">${p.local}</span>
+              <span style="color:var(--text3)">${p.real.l}–${p.real.v}</span>
+              <span style="font-weight:600">${p.visita}</span> ${flag(p.visitaFlag)}
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:0.4rem">
+              ${filas.map(f => `
+                <div style="display:flex;align-items:center;gap:0.3rem;background:${f.esConservador ? 'rgba(144,216,255,0.12)' : 'rgba(255,255,255,0.04)'};border:1px solid ${f.esConservador ? '#90d8ff66' : 'rgba(255,255,255,0.08)'};border-radius:8px;padding:0.25rem 0.5rem">
+                  <span style="font-size:0.72rem;font-weight:700;color:${f.jugador.color}">${f.jugador.nombre}</span>
+                  <span style="font-family:'Bebas Neue',sans-serif;font-size:0.85rem;color:#fff;letter-spacing:1px">${f.pr ? f.pr.l+'–'+f.pr.v : '?–?'}</span>
+                  ${f.esConservador ? '<span style="font-size:0.62rem;color:#90d8ff">🛡</span>' : ''}
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
       </div>
     </div>` : '';
 
@@ -3402,8 +3496,10 @@ function renderStats() {
   document.getElementById('stats-scroll-body').innerHTML =
     evoHTML +
     exactosPodioHTML +
+    conservadorPodioHTML +
     maxPtosHTML +
     audazHTML +
+    pronosPorPartidoHTML +
     mejorDiaHTML +
     disputadoHTML +
     h2hHTML +
