@@ -1190,6 +1190,7 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
         <span id="saveBadgeCloud" style="display:none;font-size:11px;color:var(--verde-neon);font-weight:700;padding:3px 7px;border:1px solid rgba(57,209,96,0.3);border-radius:8px;white-space:nowrap;"></span>
         <button id="cloudBtn" onclick="openSyncModal()" style="background:rgba(0,0,0,0.3);border:1px solid rgba(57,209,96,0.25);border-radius:8px;color:var(--text2);font-size:0.75rem;font-weight:600;padding:0.25rem 0.55rem;cursor:pointer;white-space:nowrap;">☁️ 2724</button>
         <button id="waBtn" onclick="abrirWAModal()" style="display:none;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.3);border-radius:8px;color:#25d366;font-size:0.75rem;font-weight:700;padding:0.25rem 0.55rem;cursor:pointer;white-space:nowrap;">🏆 Tabla WA</button>
+        <button id="diagBtn" onclick="mostrarDiagSync()" style="background:rgba(0,0,0,0.3);border:1px solid rgba(57,209,96,0.25);border-radius:8px;color:var(--text2);font-size:0.75rem;font-weight:600;padding:0.25rem 0.55rem;cursor:pointer;white-space:nowrap;" title="Diagnóstico de sincronización">🔍</button>
         <button class="btn-logout" onclick="logout()">Salir</button>
       </div>
     </div>
@@ -1206,6 +1207,44 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
   <!-- ── COUNTDOWN BAR ── -->
   <div id="countdown-bar"></div>
 </div><!-- /sticky-top -->
+
+<!-- ── MODAL DIAGNÓSTICO SYNC ── -->
+<div id="diag-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;padding:1rem;overflow-y:auto;">
+  <div style="max-width:700px;margin:0 auto;background:#0e3d19;border:1px solid rgba(57,209,96,0.3);border-radius:16px;padding:1.25rem;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+      <h2 style="font-family:'Bebas Neue',sans-serif;letter-spacing:1px;color:#fff;font-size:1.3rem;">🔍 Diagnóstico de Sync</h2>
+      <button onclick="document.getElementById('diag-modal').style.display='none'" style="background:none;border:1px solid rgba(255,255,255,0.2);border-radius:8px;color:#fff;padding:0.3rem 0.7rem;cursor:pointer;">✕</button>
+    </div>
+    <button onclick="forzarSyncYMostrar()" style="width:100%;margin-bottom:1rem;background:linear-gradient(135deg,#1a7a30,#0d4018);border:1px solid rgba(57,209,96,0.4);border-radius:10px;color:#fff;padding:0.6rem;cursor:pointer;font-weight:700;">🔄 Forzar sync ahora y refrescar diagnóstico</button>
+    <pre id="diag-content" style="color:#b8f0c8;font-size:0.7rem;white-space:pre-wrap;word-break:break-word;background:rgba(0,0,0,0.3);border-radius:10px;padding:0.75rem;max-height:60vh;overflow-y:auto;"></pre>
+  </div>
+</div>
+
+<script>
+function mostrarDiagSync() {
+  const modal = document.getElementById('diag-modal');
+  const content = document.getElementById('diag-content');
+  const diag = window._lastSyncDiag || {};
+  if (Object.keys(diag).length === 0) {
+    content.textContent = 'Todavía no hay datos de diagnóstico. Tocá "Forzar sync ahora" para generar.';
+  } else {
+    content.textContent = JSON.stringify(diag, null, 2);
+  }
+  modal.style.display = 'block';
+}
+async function forzarSyncYMostrar() {
+  const content = document.getElementById('diag-content');
+  content.textContent = 'Sincronizando...';
+  try {
+    await autoSyncPartidos(true);
+  } catch(e) {
+    content.textContent = 'Error al sincronizar: ' + (e?.message || e);
+    return;
+  }
+  mostrarDiagSync();
+}
+</script>
+
 
 <!-- ── LIVE CARD (arriba de todo) ── -->
 <div id="live-card-container"></div>
@@ -1546,7 +1585,7 @@ const GRUPOS = [
     { id:'GE1', local:'Alemania',        visita:'Curazao',          localFlag:'de', visitaFlag:'cw', dt:'2026-06-14T14:00', real:{l:null,v:null}, syncGoogle:true, venue:'NRG Stadium, Houston' },
     { id:'GE2', local:'Costa de Marfil', visita:'Ecuador',          localFlag:'ci', visitaFlag:'ec', dt:'2026-06-14T20:00', real:{l:null,v:null}, syncGoogle:true, venue:'Lincoln Financial Field, Philadelphia' },
     { id:'GE3', local:'Alemania',        visita:'Costa de Marfil',  localFlag:'de', visitaFlag:'ci', dt:'2026-06-20T17:00', real:{l:null,v:null}, syncGoogle:true, venue:'BMO Field, Toronto' },
-    { id:'GE4', local:'Ecuador',         visita:'Curazao',          localFlag:'ec', visitaFlag:'cw', dt:'2026-06-20T23:00', real:{l:null,v:null}, syncGoogle:true, venue:'Arrowhead Stadium, Kansas City' },
+    { id:'GE4', local:'Ecuador',         visita:'Curazao',          localFlag:'ec', visitaFlag:'cw', dt:'2026-06-20T21:00', real:{l:null,v:null}, syncGoogle:true, venue:'Arrowhead Stadium, Kansas City' },
     { id:'GE5', local:'Curazao',         visita:'Costa de Marfil',  localFlag:'cw', visitaFlag:'ci', dt:'2026-06-25T17:00', real:{l:null,v:null}, syncGoogle:true, venue:'Lincoln Financial Field, Philadelphia' },
     { id:'GE6', local:'Ecuador',         visita:'Alemania',         localFlag:'ec', visitaFlag:'de', dt:'2026-06-25T17:00', real:{l:null,v:null}, syncGoogle:true, venue:'MetLife Stadium, Nueva Jersey' },
   ]},
@@ -3925,6 +3964,20 @@ async function autoSyncPartidos(forzar = false) {
     const resESPN = extraerResultadoESPN(todosESPN, cfg);
     const resTSDB = extraerResultadoTSDB(tsdb, cfg);
 
+    // Diagnóstico visible en window._lastSyncDiag para poder inspeccionar
+    // por qué un partido no se marca como live (ej. desde la consola del navegador:
+    // window._lastSyncDiag['GE4'])
+    window._lastSyncDiag = window._lastSyncDiag || {};
+    window._lastSyncDiag[p.id] = {
+      partido: p.id,
+      eventosESPNencontrados: todosESPN.length,
+      eventosTSDBencontrados: tsdb.length,
+      nombresESPN: todosESPN.map(e => (e.competitions?.[0]?.competitors || []).map(c => c.team?.displayName)),
+      resESPN: resESPN ? JSON.stringify(resESPN) : 'sin match (' + cfg.localNorm + ' vs ' + cfg.visitaNorm + ')',
+      resTSDB: resTSDB ? JSON.stringify(resTSDB) : 'sin match',
+      fechasCandidatas,
+    };
+
     // Prioridad: ESPN final > TSDB final > ESPN live > TSDB live
     let res = null;
     if (resESPN && !resESPN.live) res = resESPN;
@@ -4985,9 +5038,8 @@ async function syncNubeFlotante(btn) {
 
 // Cada 45s: bajar nube + sync partidos ESPN
 setInterval(async () => {
-  if (!usuarioActual) return;
   const pin = SHARED_CLOUD_PIN;
-  if (pin) {
+  if (usuarioActual && pin) {
     try {
       const dl = await cloudDownloadByPin(pin);
       if (dl.ok) {
@@ -5008,7 +5060,6 @@ setInterval(async () => {
 
 // Cada 20s: sync rápido solo si hay partidos live
 setInterval(async () => {
-  if (!usuarioActual) return;
   const hayLive = GRUPOS.flatMap(g => g.partidos).some(p => !!p.live);
   if (!hayLive) return;
   try { await autoSyncPartidos(); } catch(e) {}
@@ -5301,6 +5352,18 @@ function renderLedBanner() {
     styleEl.textContent = `@keyframes ledScroll { 0% { transform:translateX(0) } 100% { transform:translateX(-${pct}%) } }`;
   });
 }
+
+// ── AUTO-SYNC INICIAL: apenas carga la página, sin esperar login ──
+// Así si hay partidos en curso (como Ecuador-Curazao) ya aparecen en vivo
+// desde el primer render, sin que el usuario tenga que tocar nada.
+(async function initialLiveSync() {
+  try {
+    await autoSyncPartidos();
+    renderGrupos();
+    renderPorDia();
+    renderLiveCard();
+  } catch(e) {}
+})();
 
 // ── INIT — ejecutar después de que todas las funciones estén definidas ──
 // Al iniciar, si hay PIN guardado, bajar contraseñas de la nube para asegurar bloqueo
