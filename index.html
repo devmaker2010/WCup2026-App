@@ -663,6 +663,78 @@ header p { color:var(--text2); font-size:0.82rem; letter-spacing:3px; text-trans
 
 footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.72rem; }
 
+/* ── ESTADÍSTICAS DETALLADAS POR PARTICIPANTE ── */
+.sp-resumen-row {
+  display:grid; grid-template-columns:1fr 80px 80px 80px 80px;
+  padding:0.6rem 1rem; align-items:center;
+  border-bottom:1px solid rgba(57,209,96,0.07);
+  font-size:0.82rem;
+}
+.sp-resumen-row:last-child { border-bottom:none; }
+.sp-resumen-row.header {
+  font-size:0.62rem; color:var(--text3); text-transform:uppercase; letter-spacing:1px;
+  background:rgba(0,0,0,0.18); padding:0.4rem 1rem;
+}
+.sp-col-center { text-align:center; }
+.sp-pts-partido { color:var(--wc-rojo2); font-family:'Bebas Neue',sans-serif; font-size:1.1rem; }
+.sp-pts-gol     { color:var(--verde-neon); font-family:'Bebas Neue',sans-serif; font-size:1.1rem; }
+.sp-pts-total   { color:var(--wc-dorado2); font-family:'Bebas Neue',sans-serif; font-size:1.25rem; font-weight:700; }
+
+.sp-jugador-card {
+  background:rgba(0,0,0,0.4); backdrop-filter:blur(12px);
+  border:1px solid rgba(57,209,96,0.15); border-radius:14px; overflow:hidden;
+  margin-bottom:1.25rem;
+}
+.sp-jugador-header {
+  display:flex; align-items:center; gap:0.75rem;
+  padding:0.75rem 1rem;
+  background:linear-gradient(90deg,rgba(57,209,96,0.1),rgba(245,200,66,0.05),transparent);
+  border-bottom:1px solid rgba(57,209,96,0.12);
+}
+.sp-jugador-avatar {
+  width:36px; height:36px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  font-size:0.75rem; font-weight:700; flex-shrink:0;
+  border:1px solid rgba(57,209,96,0.3);
+}
+.sp-jugador-nombre { font-family:'Bebas Neue',sans-serif; font-size:1.3rem; letter-spacing:2px; color:#fff; }
+.sp-jugador-totales { margin-left:auto; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap; }
+.sp-badge { font-size:0.68rem; font-weight:700; border-radius:8px; padding:0.15rem 0.55rem; }
+.sp-badge-partido { background:rgba(232,25,44,0.18); color:#ff6677; border:1px solid rgba(232,25,44,0.3); }
+.sp-badge-gol { background:rgba(57,209,96,0.15); color:var(--verde-neon); border:1px solid rgba(57,209,96,0.3); }
+.sp-badge-total { background:rgba(245,200,66,0.18); color:var(--wc-dorado2); border:1px solid rgba(245,200,66,0.35); font-size:0.78rem; }
+
+.sp-partido-row {
+  display:grid; grid-template-columns:1fr 72px 72px 52px 52px 60px;
+  padding:0.42rem 1rem; align-items:center;
+  border-bottom:1px solid rgba(57,209,96,0.05);
+  font-size:0.76rem;
+}
+.sp-partido-row:last-child { border-bottom:none; }
+.sp-partido-row.sp-row-header {
+  font-size:0.6rem; color:var(--text3); text-transform:uppercase; letter-spacing:0.8px;
+  background:rgba(0,0,0,0.22); border-bottom:1px solid rgba(57,209,96,0.1); padding:0.35rem 1rem;
+}
+.sp-match-name { color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.73rem; }
+.sp-score { text-align:center; font-family:'Bebas Neue',sans-serif; font-size:0.9rem; letter-spacing:1px; }
+.sp-score.pron  { color:var(--text2); }
+.sp-score.real  { color:#fff; }
+.sp-score.pending { font-family:'DM Sans',sans-serif; font-size:0.65rem; color:var(--text3); letter-spacing:0; }
+.sp-pts-gol-cell  { text-align:center; color:var(--verde-neon); font-family:'Bebas Neue',sans-serif; font-size:1rem; }
+.sp-pts-part-cell { text-align:center; color:var(--wc-rojo2);   font-family:'Bebas Neue',sans-serif; font-size:1rem; }
+.sp-pts-tot-cell  { text-align:center; color:var(--wc-dorado2); font-family:'Bebas Neue',sans-serif; font-size:1.1rem; font-weight:700; }
+.sp-pts-cero      { color:rgba(255,255,255,0.25) !important; }
+
+/* Progress bar de acumulación */
+.sp-acum-bar-wrap { height:3px; background:rgba(255,255,255,0.07); border-radius:2px; margin-top:0.3rem; overflow:hidden; }
+.sp-acum-bar { height:100%; border-radius:2px; background:linear-gradient(90deg,var(--wc-rojo2),var(--wc-dorado2)); transition:width 0.5s; }
+
+@media(max-width:600px){
+  .sp-resumen-row { grid-template-columns:1fr 62px 62px 62px 62px; padding:0.5rem 0.75rem; }
+  .sp-partido-row { grid-template-columns:1fr 60px 60px 40px 40px 50px; padding:0.35rem 0.6rem; }
+  .sp-jugador-header { padding:0.6rem 0.75rem; }
+}
+
 /* ── RACHA BADGE EN KPI ── */
 .racha-kpi-badge {
   display:inline-flex; align-items:center; gap:3px;
@@ -1297,6 +1369,26 @@ async function forzarSyncYMostrar() {
           <div style="text-align:center">Pts</div>
         </div>
         <div id="tabla-body"></div>
+      </div>
+    </div>
+
+    <!-- ── ESTADÍSTICAS DETALLADAS POR PARTICIPANTE ── -->
+    <div class="tabla-section" id="stats-participantes-section" style="margin-top:0.5rem">
+      <div class="section-title">📋 Estadísticas por Participante</div>
+
+      <!-- Tabla resumen de puntos -->
+      <div style="background:rgba(0,0,0,0.4);backdrop-filter:blur(12px);border:1px solid rgba(57,209,96,0.15);border-radius:14px;overflow:hidden;margin-bottom:1.5rem">
+        <div style="padding:0.6rem 1rem;background:rgba(57,209,96,0.06);border-bottom:1px solid rgba(57,209,96,0.12)">
+          <span style="font-size:0.7rem;color:var(--wc-dorado2);text-transform:uppercase;letter-spacing:1.5px;font-weight:700">⚡ Resumen de Puntos</span>
+        </div>
+        <div id="stats-resumen-body">
+          <!-- generado por JS -->
+        </div>
+      </div>
+
+      <!-- Detalle por jugador -->
+      <div id="stats-detalle-jugadores">
+        <!-- generado por JS -->
       </div>
     </div>
   </div>
@@ -2447,6 +2539,9 @@ function renderTabla() {
       <div class="pts-total">${j.total}</div>
     </div>
   `).join('');
+
+  // Renderizar estadísticas detalladas por participante
+  renderStatsParticipantes();
 }
 
 // ═══════════════════════════════════════════════
@@ -5447,6 +5542,184 @@ function renderLedBanner() {
     }
     styleEl.textContent = `@keyframes ledScroll { 0% { transform:translateX(0) } 100% { transform:translateX(-${pct}%) } }`;
   });
+}
+
+// ══════════════════════════════════════════════════════
+// ESTADÍSTICAS DETALLADAS POR PARTICIPANTE
+// ══════════════════════════════════════════════════════
+function calcPuntosDetalle(pron, real) {
+  // Retorna { base, bonus, total } o null si no hay resultado
+  if (real.l === null || real.v === null) return null;
+  if (!pron || pron.l === null || pron.l === undefined) return null;
+  const rl = Number(real.l), rv = Number(real.v);
+  const pl = Number(pron.l), pv = Number(pron.v);
+  let base;
+  if (pl === rl && pv === rv) {
+    base = 3;
+  } else {
+    const sr = rl > rv ? 1 : rl < rv ? -1 : 0;
+    const sp = pl > pv ? 1 : pl < pv ? -1 : 0;
+    base = sr === sp ? 2 : 0;
+  }
+  const bonus = (pl === rl ? 1 : 0) + (pv === rv ? 1 : 0);
+  return { base, bonus, total: base + bonus };
+}
+
+function renderStatsParticipantes() {
+  const seccion = document.getElementById('stats-participantes-section');
+  if (!seccion) return;
+
+  // Todos los partidos con resultado final (no live)
+  const partidosJugados = GRUPOS.flatMap(g => g.partidos.map(p => ({...p, _gNom: g.nombre})))
+    .filter(p => p.real.l !== null && p.real.v !== null)
+    .sort((a, b) => new Date(a.dt) - new Date(b.dt));
+
+  if (partidosJugados.length === 0) {
+    document.getElementById('stats-resumen-body').innerHTML =
+      '<div style="padding:1rem;text-align:center;font-size:0.78rem;color:var(--text3)">Aún no hay partidos finalizados para mostrar estadísticas.</div>';
+    document.getElementById('stats-detalle-jugadores').innerHTML = '';
+    return;
+  }
+
+  // ── TABLA RESUMEN ──
+  const tot = calcTotales();
+  const ranking = JUGADORES.map(j => ({...j,...tot[j.id]})).sort((a,b)=>b.total-a.total);
+
+  // Calcular ptsPartido y ptsGol por jugador
+  const detalleResumen = {};
+  JUGADORES.forEach(j => {
+    let ptsPartido = 0, ptsGol = 0;
+    partidosJugados.forEach(p => {
+      const pr = (pronosticos[p.id]||{})[j.id];
+      const d = calcPuntosDetalle(pr, p.real);
+      if (d) { ptsPartido += d.base; ptsGol += d.bonus; }
+    });
+    detalleResumen[j.id] = { ptsPartido, ptsGol };
+  });
+
+  const maxTotal = ranking.length > 0 ? Math.max(ranking[0].total, 1) : 1;
+
+  document.getElementById('stats-resumen-body').innerHTML =
+    `<div class="sp-resumen-row header">
+      <div>Jugador</div>
+      <div class="sp-col-center" title="Puntos ganados por acertar ganador/empate (base 2 o 3)">🏆 Pts Partido</div>
+      <div class="sp-col-center" title="Puntos +1 por cada gol de equipo acertado">⚽ Pts Gol +1</div>
+      <div class="sp-col-center" title="Partidos jugados">PJ</div>
+      <div class="sp-col-center">Total</div>
+    </div>` +
+    ranking.map(j => {
+      const dr = detalleResumen[j.id];
+      const pct = Math.round((j.total / (maxTotal)) * 100);
+      return `<div class="sp-resumen-row">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <div class="player-avatar ${j.cls}" style="width:26px;height:26px;font-size:0.62rem">${j.avatar}</div>
+          <span style="font-weight:600;color:#fff">${j.nombre}</span>
+        </div>
+        <div class="sp-col-center sp-pts-partido">${dr.ptsPartido}</div>
+        <div class="sp-col-center sp-pts-gol">${dr.ptsGol > 0 ? '+' + dr.ptsGol : '—'}</div>
+        <div class="sp-col-center" style="color:var(--text3);font-size:0.8rem">${j.pt}</div>
+        <div class="sp-col-center sp-pts-total">${j.total}</div>
+      </div>
+      <div style="padding:0 1rem 0.45rem;margin-top:-0.3rem">
+        <div class="sp-acum-bar-wrap"><div class="sp-acum-bar" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('');
+
+  // ── DETALLE POR JUGADOR ──
+  const DIAS  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  function labelFecha(dt) {
+    const d = new Date(dt + ':00-03:00');
+    return `${DIAS[d.getDay()]} ${d.getDate()} ${MESES[d.getMonth()]}`;
+  }
+
+  document.getElementById('stats-detalle-jugadores').innerHTML = JUGADORES.map(j => {
+    let acumPartido = 0, acumGol = 0, acumTotal = 0;
+    let filasCont = '';
+    let filasAccum = '';
+
+    partidosJugados.forEach(p => {
+      const pr = (pronosticos[p.id]||{})[j.id];
+      const d = calcPuntosDetalle(pr, p.real);
+      const tieneP = pr && pr.l !== null && pr.l !== undefined;
+      const pronStr = tieneP ? `${pr.l}–${pr.v}` : '—';
+      const realStr = `${p.real.l}–${p.real.v}`;
+      const fecha = labelFecha(p.dt);
+      const matchName = `${p.local} vs ${p.visita}`;
+
+      if (!d) {
+        // Sin pronóstico para este partido
+        filasCont += `<div class="sp-partido-row">
+          <div class="sp-match-name" title="${matchName} · ${fecha}">${matchName}</div>
+          <div class="sp-score pron sp-pts-cero">${pronStr}</div>
+          <div class="sp-score real">${realStr}</div>
+          <div class="sp-pts-gol-cell sp-pts-cero">—</div>
+          <div class="sp-pts-part-cell sp-pts-cero">—</div>
+          <div class="sp-pts-tot-cell sp-pts-cero">—</div>
+        </div>`;
+        return;
+      }
+
+      acumPartido += d.base;
+      acumGol += d.bonus;
+      acumTotal += d.total;
+
+      // Color de la fila por resultado
+      let rowBg = '';
+      if (d.total >= 4) rowBg = 'background:rgba(245,200,66,0.05)';
+      else if (d.base === 2) rowBg = 'background:rgba(232,25,44,0.04)';
+      else if (d.base === 0 && d.bonus === 0) rowBg = 'background:rgba(255,255,255,0.02)';
+
+      const golStr = d.bonus > 0 ? '+' + d.bonus : '—';
+      const partStr = d.base > 0 ? '+' + d.base : '0';
+      const totStr = '+' + d.total;
+
+      filasCont += `<div class="sp-partido-row" style="${rowBg}">
+        <div class="sp-match-name" title="${matchName} · ${fecha}">${matchName}</div>
+        <div class="sp-score pron">${pronStr}</div>
+        <div class="sp-score real">${realStr}</div>
+        <div class="sp-pts-gol-cell ${d.bonus === 0 ? 'sp-pts-cero' : ''}">${golStr}</div>
+        <div class="sp-pts-part-cell ${d.base === 0 ? 'sp-pts-cero' : ''}">${partStr}</div>
+        <div class="sp-pts-tot-cell ${d.total === 0 ? 'sp-pts-cero' : ''}">${totStr}</div>
+      </div>`;
+    });
+
+    // Totales del jugador
+    const dr = detalleResumen[j.id];
+
+    return `<div class="sp-jugador-card">
+      <div class="sp-jugador-header">
+        <div class="sp-jugador-avatar ${j.cls}">${j.avatar}</div>
+        <div>
+          <div class="sp-jugador-nombre">${j.nombre}</div>
+          <div style="font-size:0.62rem;color:var(--text3);margin-top:2px">${partidosJugados.length} partido${partidosJugados.length !== 1 ? 's' : ''} jugados</div>
+        </div>
+        <div class="sp-jugador-totales">
+          <span class="sp-badge sp-badge-partido" title="Puntos por acierto de partido">🏆 ${dr.ptsPartido} pts partido</span>
+          <span class="sp-badge sp-badge-gol" title="Puntos +1 por gol acertado">⚽ +${dr.ptsGol} pts gol</span>
+          <span class="sp-badge sp-badge-total">= ${dr.ptsPartido + dr.ptsGol} pts</span>
+        </div>
+      </div>
+      <div class="sp-partido-row sp-row-header">
+        <div>Partido</div>
+        <div class="sp-col-center">Mi prono</div>
+        <div class="sp-col-center">Real</div>
+        <div class="sp-col-center" title="Puntos +1 por cada gol acertado">⚽+1</div>
+        <div class="sp-col-center" title="Puntos por acierto de partido (0, 2 o 3)">🏆 Part.</div>
+        <div class="sp-col-center">Total</div>
+      </div>
+      ${filasCont}
+      <div class="sp-partido-row" style="background:rgba(0,0,0,0.3);border-top:1px solid rgba(57,209,96,0.15)">
+        <div style="font-size:0.7rem;color:var(--text2);font-weight:700;text-transform:uppercase;letter-spacing:0.5px">TOTAL ACUMULADO</div>
+        <div></div>
+        <div></div>
+        <div class="sp-pts-gol-cell" style="font-size:1.2rem">+${dr.ptsGol}</div>
+        <div class="sp-pts-part-cell" style="font-size:1.2rem">+${dr.ptsPartido}</div>
+        <div class="sp-pts-tot-cell" style="font-size:1.35rem">${dr.ptsPartido + dr.ptsGol}</div>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── AUTO-SYNC INICIAL: apenas carga la página, sin esperar login ──
