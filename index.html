@@ -1655,7 +1655,7 @@ const GRUPOS = [
     { id:'GC3', local:'Escocia',         visita:'Marruecos',        localFlag:'gb-sct', visitaFlag:'ma', dt:'2026-06-19T19:00', real:{l:null,v:null}, syncGoogle:true, venue:'Gillette Stadium, Boston' },
     { id:'GC4', local:'Brasil',          visita:'Haití',            localFlag:'br', visitaFlag:'ht', dt:'2026-06-19T21:30', real:{l:null,v:null}, syncGoogle:true, venue:'Lincoln Financial Field, Philadelphia' },
     { id:'GC5', local:'Marruecos',       visita:'Haití',            localFlag:'ma', visitaFlag:'ht', dt:'2026-06-24T19:00', real:{l:null,v:null}, syncGoogle:true, venue:'Mercedes-Benz Stadium, Atlanta' },
-    { id:'GC6', local:'Brasil',          visita:'Escocia',          localFlag:'br', visitaFlag:'gb-sct', dt:'2026-06-24T19:00', real:{l:0,v:2}, syncGoogle:true, venue:'Hard Rock Stadium, Miami' },
+    { id:'GC6', local:'Brasil',          visita:'Escocia',          localFlag:'br', visitaFlag:'gb-sct', dt:'2026-06-24T19:00', real:{l:null,v:null}, syncGoogle:true, venue:'Hard Rock Stadium, Miami' },
   ]},
 
   // ══════════════════════════════
@@ -3917,13 +3917,14 @@ function extraerResultadoESPN(eventos, cfg) {
   if (!ev) return null;
   const comp = ev.competitions?.[0];
   const comps = comp?.competitors || [];
-  const home = comps.find(c => c.homeAway === 'home');
-  const away = comps.find(c => c.homeAway === 'away');
   const status = comp?.status?.type?.name || '';
   // No tomar scores de partidos que aún no empezaron
   if (status === 'STATUS_SCHEDULED' || status === 'STATUS_POSTPONED' || status === 'STATUS_CANCELED') return null;
-  const l = home?.score != null ? parseInt(home.score) : null;
-  const v = away?.score != null ? parseInt(away.score) : null;
+  // Buscar cada equipo por nombre para no asumir home=local (ESPN puede invertirlos)
+  const localComp  = comps.find(c => matchTeam((c.team?.displayName || '').toLowerCase(), cfg.localNorm));
+  const visitaComp = comps.find(c => matchTeam((c.team?.displayName || '').toLowerCase(), cfg.visitaNorm));
+  const l = localComp?.score  != null ? parseInt(localComp.score)  : null;
+  const v = visitaComp?.score != null ? parseInt(visitaComp.score) : null;
   if (l === null || v === null) return null;
   const clock = comp?.status?.displayClock || '';
   const period = comp?.status?.period || 0;
