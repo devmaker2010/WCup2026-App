@@ -217,9 +217,10 @@ header p { color:var(--text2); font-size:0.82rem; letter-spacing:3px; text-trans
 .tabla-posiciones {
   background:rgba(0,0,0,0.4); backdrop-filter:blur(12px);
   border:1px solid rgba(57,209,96,0.15); border-radius:14px; overflow:hidden;
+  overflow-x:auto;
 }
 .tabla-pos-row {
-  display:grid; grid-template-columns:52px 1fr 56px 78px 78px 78px;
+  display:grid; grid-template-columns:52px 1fr 56px 68px 68px 68px 68px 72px;
   padding:0.85rem 1.4rem; align-items:center;
   border-bottom:1px solid rgba(57,209,96,0.07);
 }
@@ -961,7 +962,8 @@ footer { text-align:center; padding:2rem 1rem; color:var(--text3); font-size:0.7
 
   /* ── Tabla ── */
   .tabla-section { padding:0 0.25rem; }
-  .tabla-pos-row { grid-template-columns:34px 1fr 36px 48px 48px 48px; padding:0.55rem 0.75rem; }
+  .tabla-pos-row { grid-template-columns:28px 1fr 30px 44px 44px 44px 44px 52px; padding:0.5rem 0.5rem; }
+  .tabla-pos-row.header { font-size:0.62rem; padding:0.4rem 0.5rem; }
   .pts-total { font-size:1.45rem; }
   .player-name { font-size:1rem; }
 
@@ -1363,9 +1365,11 @@ async function forzarSyncYMostrar() {
       <div class="tabla-posiciones">
         <div class="tabla-pos-row header">
           <div></div><div>Jugador</div>
-          <div style="text-align:center">PJ</div>
-          <div style="text-align:center">Exactos</div>
-          <div style="text-align:center">Signos</div>
+          <div style="text-align:center" title="Partidos jugados">PJ</div>
+          <div style="text-align:center" title="Marcador exacto (+3pts)">Exactos</div>
+          <div style="text-align:center" title="Acertó ganador/empate pero no el marcador (+2pts)">Signos</div>
+          <div style="text-align:center" title="Puntos por goles acertados sin haber acertado el ganador/empate">Pts⚽</div>
+          <div style="text-align:center" title="Partidos sin ningún punto">Fallos</div>
           <div style="text-align:center">Pts</div>
         </div>
         <div id="tabla-body"></div>
@@ -2041,15 +2045,26 @@ function calcPuntos(pron, real) {
 
 function calcTotales() {
   const t = {};
-  JUGADORES.forEach(j => t[j.id] = { exactos:0, signos:0, total:0, pj:0, pt:0 });
+  JUGADORES.forEach(j => t[j.id] = { exactos:0, signos:0, total:0, pj:0, pt:0, ptsGolSolo:0, fallos:0 });
   GRUPOS.forEach(g => g.partidos.forEach(p => {
     const tieneResultado = p.real.l !== null && p.real.v !== null;
     JUGADORES.forEach(j => {
-      const pts = calcPuntos((pronosticos[p.id]||{})[j.id], p.real);
-      if (tieneResultado && (pronosticos[p.id]||{})[j.id]) { t[j.id].pj++; t[j.id].pt++; }
+      const pron = (pronosticos[p.id]||{})[j.id];
+      const pts = calcPuntos(pron, p.real);
+      if (tieneResultado && pron) { t[j.id].pj++; t[j.id].pt++; }
       if (pts === null) return;
-      if (pts >= 3 && Number((pronosticos[p.id]||{})[j.id]?.l) === Number(p.real.l) && Number((pronosticos[p.id]||{})[j.id]?.v) === Number(p.real.v)) { t[j.id].exactos++; }
+
+      const rl = Number(p.real.l), rv = Number(p.real.v);
+      const pl = Number(pron.l), pv = Number(pron.v);
+      const bonus = (pl === rl ? 1 : 0) + (pv === rv ? 1 : 0);
+
+      if (pl === rl && pv === rv) { t[j.id].exactos++; }
       else if (pts >= 2) { t[j.id].signos++; }
+      // Pts por goles sin acertar ganador/empate: bonus cuando base=0
+      const base = pts - bonus;
+      if (base === 0 && bonus > 0) { t[j.id].ptsGolSolo += bonus; }
+      // Fallos: 0 puntos total
+      if (pts === 0) { t[j.id].fallos++; }
       t[j.id].total += pts;
     });
   }));
@@ -2499,9 +2514,45 @@ function renderPartido(p) {
 }
 
 let _tablaLastUpdate = null;
+let _tablaSinBonus = false; // toggle: ver tabla sin puntos extra de goles
+
+function toggleTablaSinBonus() {
+  _tablaSinBonus = !_tablaSinBonus;
+  renderTabla();
+}
+
+function calcTotalesSinBonus() {
+  // Igual que calcTotales pero solo cuenta base (exacto=3, signo=2, fallo=0), sin bonus de goles
+  const t = {};
+  JUGADORES.forEach(j => t[j.id] = { exactos:0, signos:0, total:0, pj:0, pt:0, ptsGolSolo:0, fallos:0 });
+  GRUPOS.forEach(g => g.partidos.forEach(p => {
+    const tieneResultado = p.real.l !== null && p.real.v !== null;
+    JUGADORES.forEach(j => {
+      const pron = (pronosticos[p.id]||{})[j.id];
+      if (!pron || pron.l === null || pron.l === undefined) return;
+      if (!tieneResultado) return;
+      t[j.id].pj++;
+      const rl = Number(p.real.l), rv = Number(p.real.v);
+      const pl = Number(pron.l), pv = Number(pron.v);
+      let base;
+      if (pl === rl && pv === rv) { base = 3; t[j.id].exactos++; }
+      else {
+        const sr = rl > rv ? 1 : rl < rv ? -1 : 0;
+        const sp = pl > pv ? 1 : pl < pv ? -1 : 0;
+        base = sr === sp ? 2 : 0;
+        if (base === 2) t[j.id].signos++;
+        if (base === 0) t[j.id].fallos++;
+      }
+      t[j.id].total += base;
+    });
+  }));
+  const totalJugados = GRUPOS.flatMap(g=>g.partidos).filter(p=>p.real.l!==null).length;
+  JUGADORES.forEach(j => t[j.id].pt = totalJugados);
+  return t;
+}
 
 function renderTabla() {
-  const tot = calcTotales();
+  const tot = _tablaSinBonus ? calcTotalesSinBonus() : calcTotales();
   const ranking = JUGADORES.map(j => ({...j,...tot[j.id]})).sort((a,b)=>b.total-a.total);
   const medal = ['gold','silver','bronze'];
 
@@ -2516,16 +2567,35 @@ function renderTabla() {
   const ss = String(now.getSeconds()).padStart(2,'0');
   const updateLabel = `${hh}:${mm}:${ss}`;
 
+  // Botón toggle sin bonus
+  const toggleBtn = `<button onclick="toggleTablaSinBonus()" style="
+    background:${_tablaSinBonus ? 'rgba(232,25,44,0.18)' : 'rgba(255,255,255,0.06)'};
+    border:1px solid ${_tablaSinBonus ? 'rgba(232,25,44,0.6)' : 'rgba(255,255,255,0.15)'};
+    border-radius:8px; color:${_tablaSinBonus ? '#ff8899' : 'var(--text3)'};
+    font-size:0.68rem; font-weight:700; padding:0.25rem 0.65rem;
+    cursor:pointer; transition:all 0.18s; letter-spacing:0.3px; white-space:nowrap;
+  ">${_tablaSinBonus ? '⚽ Con pts extra' : '🚫 Sin pts extra'}</button>`;
+
+  // Banner modo sin bonus
+  const sinBonusBanner = _tablaSinBonus ? `<div style="
+    background:rgba(232,25,44,0.1); border-bottom:1px solid rgba(232,25,44,0.2);
+    padding:0.4rem 1rem; font-size:0.7rem; color:#ff8899;
+    display:flex; align-items:center; gap:0.4rem;
+  ">⚠️ Modo simulación: <strong>sin puntos extra por goles</strong> · solo exacto (+3) y signo (+2)</div>` : '';
+
   // Header de actualización
-  const updateBar = `<div id="tabla-update-bar" style="display:flex;align-items:center;justify-content:space-between;padding:0.45rem 1rem;background:rgba(0,0,0,0.25);border-bottom:1px solid rgba(57,209,96,0.1);font-size:0.68rem;color:var(--text3)">
+  const updateBar = `<div id="tabla-update-bar" style="display:flex;align-items:center;justify-content:space-between;padding:0.45rem 1rem;background:rgba(0,0,0,0.25);border-bottom:1px solid rgba(57,209,96,0.1);font-size:0.68rem;color:var(--text3);gap:0.5rem;flex-wrap:wrap">
     <span style="display:flex;align-items:center;gap:0.4rem">
       ${hayLive ? '<span style="width:7px;height:7px;border-radius:50%;background:#ff5566;display:inline-block;animation:pulse 1.2s infinite"></span><span style="color:#ff8899;font-weight:600">EN VIVO · actualizando cada 20s</span>' : '<span style="opacity:0.6">⟳ Se actualiza cada 45s</span>'}
     </span>
-    <span style="display:flex;align-items:center;gap:0.35rem">
-      <span style="opacity:0.5">Última actualiz.</span>
-      <span id="tabla-update-time" style="color:var(--verde-neon);font-weight:600;font-variant-numeric:tabular-nums">${updateLabel}</span>
+    <span style="display:flex;align-items:center;gap:0.5rem">
+      ${toggleBtn}
+      <span style="display:flex;align-items:center;gap:0.35rem">
+        <span style="opacity:0.5">Última actualiz.</span>
+        <span id="tabla-update-time" style="color:var(--verde-neon);font-weight:600;font-variant-numeric:tabular-nums">${updateLabel}</span>
+      </span>
     </span>
-  </div>`;
+  </div>${sinBonusBanner}`;
 
   // Calcular flechas de ranking antes de actualizar el snapshot
   const arrows = {};
@@ -2543,9 +2613,15 @@ function renderTabla() {
         ${j.nombre}${arrows[j.id] || ''}
       </div>
       <div class="pts-detail" style="color:var(--text2);font-size:0.8rem">${j.pt}</div>
-      <div class="pts-detail">${j.exactos}</div>
-      <div class="pts-detail">${j.signos}</div>
-      <div class="pts-total">${j.total}</div>
+      <div class="pts-detail" style="color:var(--wc-dorado2)">${j.exactos}</div>
+      <div class="pts-detail" style="color:var(--verde-neon)">${j.signos}</div>
+      <div class="pts-detail" style="color:${!_tablaSinBonus && j.ptsGolSolo > 0 ? '#7ec8e3' : 'var(--text3)'}">
+        ${_tablaSinBonus ? '—' : (j.ptsGolSolo > 0 ? '+' + j.ptsGolSolo : '—')}
+      </div>
+      <div class="pts-detail" style="color:${j.fallos > 0 ? '#ff8899' : 'var(--text3)'}">
+        ${j.fallos > 0 ? j.fallos : '—'}
+      </div>
+      <div class="pts-total" style="${_tablaSinBonus ? 'color:#ff8899' : ''}">${j.total}</div>
     </div>
   `).join('');
 
